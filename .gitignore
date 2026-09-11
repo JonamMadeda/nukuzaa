@@ -1,0 +1,11 @@
+.env
+dist/
+node_modules/
+src-tauri/target/
+src-tauri/gen/
+# updater signing keys (never commit)
+*.key
+*.pub
+release/
+# generated test bundles
+scripts/*.bundle.mjs

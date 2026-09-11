@@ -1,0 +1,45 @@
+# Builds + publishes a Nukuzaa release whenever a version tag is pushed.
+#
+#   git tag v0.2.0; git push origin v0.2.0
+#
+# Required repo secret: TAURI_SIGNING_PRIVATE_KEY (contents of ~/.tauri/nukuzaa.key).
+# The updater's `latest.json` + signatures are attached to the GitHub release,
+# which is exactly what the in-app updater polls.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    permissions:
+      contents: write
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: npm ci
+
+      - name: Build + draft release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'Nukuzaa ${{ github.ref_name }}'
+          releaseDraft: false
+          prerelease: false
