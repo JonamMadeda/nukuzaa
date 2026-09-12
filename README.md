@@ -1,58 +1,72 @@
 # Nukuzaa — YouTube Transcripts, Organized
 
-Desktop app (Tauri v2 + React 18 + TypeScript + Tailwind) for extracting, saving,
-and reading YouTube transcripts in folder collections. Backed by Neon PostgreSQL.
+Nukuzaa is a Windows desktop app for **extracting, saving, and reading YouTube
+video transcripts** organized into folder collections. Paste any YouTube link —
+watch, `youtu.be`, or Shorts — and get a clean, readable transcript you can
+search, copy, or export as PDF.
 
-## 1. Database setup (Neon)
+## Install (recommended)
 
-1. Open your Neon project → SQL Editor.
-2. Run `sql/001_init.sql` (creates `folders` + `transcripts`, UUID PKs, CASCADE delete).
-3. Copy the **pooled** connection string from Neon → Connect.
+1. Go to **[Releases](https://github.com/JonamMadeda/nukuzaa/releases/latest)**
+   and download **`Nukuzaa_0.1.0_x64-setup.exe`**.
+2. Double-click the setup file and follow the installer. This adds Nukuzaa to
+   your Start Menu and Apps list.
+3. Open **Nukuzaa** and start saving transcripts. No accounts, no settings,
+   no configuration — just run it.
+
+> **"Unknown publisher" warning?** The installer isn't code-signed with a
+> commercial certificate, so Windows SmartScreen may ask you to confirm.
+> Click **More info → Run anyway**. The app updates itself from this GitHub
+> repo (see below), so you only need to trust this one prompt.
+
+**No-install option:** download **`Nukuzaa-0.1.0-portable.exe`** from the same
+release page and double-click it — nothing is installed.
+
+**Requirements:** Windows 10/11 64-bit and an internet connection. (WebView2
+is preinstalled on modern Windows.)
+
+## First run in 30 seconds
+
+1. Click **Create New Folder** (e.g. "Machine Learning").
+2. Open the folder, paste a YouTube URL, click **Add document**.
+3. Click the saved card to read — switch between **Paragraphs** and
+   **Timestamps**, **Copy All**, or **Export PDF**.
+
+## Updates
+
+Nukuzaa checks for new releases on GitHub every time it starts (and whenever
+you click **Check for updates** in the footer). When one is available you'll
+get a prompt: **Download & install → Restart now**. That's it — you never
+need to revisit the releases page unless you want to.
+
+## Features
+
+- Folder collections with document counts, search, and grid/list views
+- Local caption extraction (runs on your machine, no datacenter blocks)
+- Reader with paragraphs/timestamps views, copy-all, and PDF export
+- Dashboard metrics: folders, documents, collections
+- Automatic database reconnection (rides out cloud cold starts)
+
+## For developers
 
 ```bash
-cp .env.example .env
-# edit .env and set VITE_DATABASE_URL to your pooled string
-```
-
-> Never commit `.env`. The connection string you pasted in chat should stay
-> in `.env` locally only.
-
-## 2. Run
-
-```bash
+git clone https://github.com/JonamMadeda/nukuzaa.git
+cd nukuzaa
+cp .env.example .env   # add your Neon pooled URL as VITE_DATABASE_URL
 npm install
-npm run dev          # web preview (DB works; YouTube fetch needs the desktop runtime — see below)
-npm run tauri dev    # full desktop runtime (recommended)
-npm run tauri build  # production installer
+npm run tauri dev
 ```
 
-## 3. Why extraction is "local"
+Full manual — architecture, database schema, extraction pipeline, signing,
+and release process: **[docs/nukuzaa-guide.md](docs/nukuzaa-guide.md)**.
 
-YouTube blocks datacenter IPs and its watch page has no CORS headers, so a
-plain `fetch()` from a server or browser fails. Nukuzaa fixes this by fetching
-from **your own machine**:
+## Troubleshooting
 
-- Frontend: `src/lib/extractor.ts` parses the video ID, captionTracks JSON and
-  timedtext XML into `{ start, dur, text }[]`.
-- Transport: `fetchText()` calls the Rust command `fetch_url_text`
-  (`src-tauri/src/lib.rs`, `reqwest` + desktop UA) when running under Tauri,
-  falling back to `fetch()` in a plain browser. The Rust command is
-  allow-listed to YouTube/thumbnail hosts only.
-- Result is saved with `saveTranscript()` (`src/lib/db.ts`, `@neondatabase/serverless`
-  HTTP pooling — CORS-safe) into `transcripts` with `rawText` + `captionsJson`.
+| Problem | Fix |
+| ------- | --- |
+| SmartScreen warning on install | More info → Run anyway (expected for unsigned builds) |
+| Red "DB offline" pill | Wait a few seconds — the app retries automatically |
+| "No captions found" | Video has captions disabled, or auto-captions still processing |
+| Import fails | Transcripts import only in the desktop app, not a browser |
 
-## 4. Project map
-
-```
-sql/001_init.sql              migration
-src/lib/db.ts                 Neon client + folder/transcript queries
-src/lib/extractor.ts          video-ID, captionTracks + XML parsing
-src/lib/types.ts, utils.ts    shared types, time/format helpers
-src/hooks/useToast.tsx        toast notifications
-src/components/Header.tsx     brand + Neon status pill
-src/components/Dashboard.tsx  metrics, search, grid/list, folders
-src/components/Workspace.tsx  add-document flow + doc cards
-src/components/TranscriptReaderModal.tsx  paragraphs/timestamps, copy-all
-src/App.tsx                   view routing + DB lifecycle
-src-tauri/                    Tauri v2 backend (fetch command + opener)
-```
+Current version: **0.1.0**
