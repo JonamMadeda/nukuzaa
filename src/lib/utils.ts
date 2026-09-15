@@ -27,12 +27,16 @@ export function formatDate(iso: string): string {
 
 export function friendlyDbError(e: unknown): string {
   const msg = e instanceof Error ? e.message : String(e);
+  // Already-friendly session messages pass through untouched.
+  if (/not signed in|session expired|sign in again/i.test(msg)) return msg;
   if (/fetch failed|network|Failed to fetch|Load failed/i.test(msg))
-    return 'Network error — check your connection and that VITE_DATABASE_URL is reachable.';
-  if (/password|auth|permission|denied|unauthorized|role/i.test(msg))
-    return 'Database rejected the connection — verify your Neon credentials.';
+    return 'Network error — check your connection and that the Neon hosts are reachable.';
+  if (/jwt|token.*expir|expir.*token|unauthorized|policy|row-level|permission|denied/i.test(msg))
+    return 'Access denied — sign out and sign back in. If it persists, run `node scripts/migrate.mjs` to repair database roles.';
+  if (/password|role/i.test(msg))
+    return 'Database rejected the connection — run `node scripts/migrate.mjs` to repair credentials.';
   if (/relation .* does not exist|migrate/i.test(msg))
-    return 'Tables not found — run sql/001_init.sql in the Neon SQL editor first.';
+    return 'Tables not found — run `node scripts/migrate.mjs` first.';
   if (/timeout|timed out|504|502|cold start/i.test(msg))
     return `${msg} — Neon serverless computes can cold-start after idle (up to ~30s). The app retries automatically.`;
   if (/invalid input syntax for type uuid/i.test(msg)) return 'Internal error: bad folder id.';

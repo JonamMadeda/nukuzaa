@@ -4,14 +4,17 @@ import Dashboard, { type FolderViewMode } from './components/Dashboard';
 import Workspace from './components/Workspace';
 import TranscriptReaderModal from './components/TranscriptReaderModal';
 import CreateFolderModal from './components/CreateFolderModal';
+import AuthScreen from './components/AuthScreen';
 import UpdateManager, { CHECK_UPDATES_EVENT } from './components/UpdateManager';
 import { ToastProvider, useToast } from './hooks/useToast';
+import { authClient, SESSION_EXPIRED_EVENT, clearTokenCache, setCurrentUser } from './lib/auth';
 import {
   checkConnection,
   createFolder,
   deleteFolder,
   getDbHost,
   listFoldersWithCounts,
+  resetDbClient,
 } from './lib/db';
 import type { DbStatus, Folder, TranscriptDoc } from './lib/types';
 import { friendlyDbError } from './lib/utils';
@@ -39,6 +42,10 @@ function Shell() {
   const [creating, setCreating] = useState(false);
   const [activeDoc, setActiveDoc] = useState<TranscriptDoc | null>(null);
   const [appVersion, setAppVersion] = useState<string | null>(null);
+  const [signingOut, setSigningOut] = useState(false);
+  const { data: session, isPending: sessionPending, refetch: refetchSession } = authClient.useSession();
+  const userId = session?.user?.id ?? null;
+  const userEmail = session?.user?.email ?? null;
 
   useEffect(() => {
     (async () => {
@@ -77,6 +84,10 @@ function Shell() {
         setStatus('error');
         setDbError(friendlyDbError(e));
         setLoadingFolders(false);
+        // Auth failures (signed out / expired session) never heal by retrying.
+        if (/not signed in|session expired|sign in again/i.test(e instanceof Error ? e.message : String(e))) {
+          return;
+        }
         if (attemptRef.current < MAX_ATTEMPTS) {
           setAutoRetrying(true);
           retryTimer.current = window.setTimeout(
@@ -91,12 +102,51 @@ function Shell() {
     [notify],
   );
 
+  // Mirror the server-validated session into the query layer. Folders load
+  // only once a user is known; sign-out (or session loss) drops all cached
+  // user state so the next account starts clean.
   useEffect(() => {
+    if (sessionPending) return;
+    setCurrentUser(userId);
+    if (!userId) {
+      clearTokenCache();
+      resetDbClient();
+      setFolders([]);
+      setLoadingFolders(false);
+      setStatus('connecting');
+      setDbError(null);
+      setView({ name: 'dashboard' });
+      return;
+    }
     void loadFolders();
     return () => {
       if (retryTimer.current) window.clearTimeout(retryTimer.current);
     };
-  }, [loadFolders]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionPending, userId]);
+
+  // If the session dies mid-use (expired cookie/revoked session), the next
+  // query failure fires SESSION_EXPIRED_EVENT: drop user state, re-check the
+  // session with the server, and land back on the AuthScreen.
+  useEffect(() => {
+    const onExpired = () => {
+      setCurrentUser(null);
+      clearTokenCache();
+      resetDbClient();
+      setFolders([]);
+      setView({ name: 'dashboard' });
+      setActiveDoc(null);
+      setCreateOpen(false);
+      notify('info', 'Session expired — please sign in again.');
+      try {
+        void refetchSession?.();
+      } catch {
+        /* refetch failure just leaves the stale hook value; next query re-fires */
+      }
+    };
+    window.addEventListener(SESSION_EXPIRED_EVENT, onExpired);
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, onExpired);
+  }, [notify, refetchSession]);
 
   // Keep workspace header title fresh when counts change.
   const refreshCounts = useCallback(async () => {
@@ -145,9 +195,55 @@ function Shell() {
     }
   };
 
+  const handleSignOut = async () => {
+    if (signingOut) return;
+    setSigningOut(true);
+    try {
+      await authClient.signOut();
+    } catch (e) {
+      notify('error', friendlyDbError(e));
+    } finally {
+      // The session effect clears user state; do it eagerly too in case the
+      // sign-out request itself failed (local session is dropped regardless).
+      // Reconcile with the server so a failed request can't leave a stale
+      // session rendering the app for a signed-out user.
+      setCurrentUser(null);
+      clearTokenCache();
+      resetDbClient();
+      setFolders([]);
+      setView({ name: 'dashboard' });
+      try {
+        await refetchSession?.();
+      } catch {
+        /* offline — local state is already cleared above */
+      }
+      setSigningOut(false);
+    }
+  };
+
+  if (sessionPending) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-stone-100">
+        <p className="text-sm text-stone-500">Checking your session…</p>
+      </div>
+    );
+  }
+
+  if (!userId) {
+    return <AuthScreen />;
+  }
+
   return (
     <div className="flex min-h-full flex-col">
-      <Header status={status} onRetry={() => void loadFolders()} autoRetrying={autoRetrying} attempt={attempt} />
+      <Header
+        status={status}
+        onRetry={() => void loadFolders()}
+        autoRetrying={autoRetrying}
+        attempt={attempt}
+        userEmail={userEmail}
+        onSignOut={() => void handleSignOut()}
+        signingOut={signingOut}
+      />
 
       <main className="flex-1">
         {view.name === 'dashboard' ? (
