@@ -17,10 +17,6 @@
         "height": 800,
         "minWidth": 960,
         "minHeight": 640,
-        // Serve the frontend as https://tauri.localhost instead of the
-        // default http://tauri.localhost on Windows. Neon Auth only accepts
-        // http(s) origins, and rejects non-localhost http outright — without
-        // this, production login can never be allowlisted (v0.2.2+).
         "useHttpsScheme": true
       }
     ],
