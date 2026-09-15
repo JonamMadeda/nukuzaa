@@ -38,8 +38,17 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'Nukuzaa ${{ github.ref_name }}'
           releaseDraft: false
           prerelease: false
+
+      # Raw exe for the no-install portable asset (uploaded to the release
+      # manually after CI finishes: rename to Nukuzaa-<ver>-portable.exe).
+      - name: Upload portable exe artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: portable-exe
+          path: src-tauri/target/release/nukuzaa.exe

@@ -361,8 +361,8 @@ message for bug reports (no secrets included).
 
 - Windows x64 only so far (NSIS/MSI/portable); macOS needs `icon.icns` +
   CI-built artifacts, Linux needs its bundle targets enabled.
-- Single-user design; Neon holds the shared source of truth if the same
-  database URL is used on multiple machines.
+- Per-user data since v0.2.0 (Neon Auth email login + RLS on `user_id`).
+  Pre-auth shared rows were wiped during the 0.2.0 migration.
 - Possible next steps: transcript search across folders, edit/annotate
   saved transcripts, multi-language track picker, PDF filename + export
   location choice, auto-check cadence setting.
