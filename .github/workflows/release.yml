@@ -39,6 +39,12 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # Baked into the frontend at build time (Vite). .env is gitignored
+          # so CI gets them here: public identifiers as Variables, the
+          # password-bearing DB URL as a Secret.
+          VITE_NEON_AUTH_URL: ${{ vars.VITE_NEON_AUTH_URL }}
+          VITE_NEON_JWKS_URL: ${{ vars.VITE_NEON_JWKS_URL }}
+          VITE_DATABASE_AUTHENTICATED_URL: ${{ secrets.VITE_DATABASE_AUTHENTICATED_URL }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'Nukuzaa ${{ github.ref_name }}'

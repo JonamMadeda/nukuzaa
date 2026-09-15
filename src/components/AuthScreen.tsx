@@ -5,6 +5,25 @@ import { cn } from '../lib/utils';
 
 type Mode = 'signin' | 'signup';
 
+/** Set when the release build was made without login configuration. */
+const AUTH_URL = import.meta.env.VITE_NEON_AUTH_URL as string | undefined;
+
+function authHost(): string {
+  try {
+    return AUTH_URL ? new URL(AUTH_URL).hostname : 'not configured';
+  } catch {
+    return 'not configured';
+  }
+}
+
+function withTimeout<T>(p: Promise<T>, ms: number, message: string): Promise<T> {
+  let timer: number | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = window.setTimeout(() => reject(new Error(message)), ms);
+  });
+  return Promise.race([p, timeout]).finally(() => window.clearTimeout(timer));
+}
+
 function prettyAuthError(raw: unknown): string {
   const msg = typeof raw === 'object' && raw !== null && 'message' in raw
     ? String((raw as { message: unknown }).message)
@@ -16,6 +35,8 @@ function prettyAuthError(raw: unknown): string {
   if (/password.*(short|weak|8)|too short/i.test(msg))
     return 'Password must be at least 8 characters.';
   if (/invalid email/i.test(msg)) return 'Enter a valid email address.';
+  if (/invalid origin|origin.*requir|missing.*origin/i.test(msg))
+    return 'The app was blocked by the login server (origin not allowed). Tell support the app shows ORIGIN-BLOCKED.';
   if (/network|fetch failed|failed to fetch/i.test(msg))
     return 'Cannot reach the login server — check your connection and retry.';
   return msg || 'Something went wrong signing you in.';
@@ -32,6 +53,13 @@ export default function AuthScreen() {
   const submit = async () => {
     if (busy) return;
     setError(null);
+    if (!AUTH_URL) {
+      setError(
+        'This build is missing its login configuration (VITE_NEON_AUTH_URL). ' +
+          'Please update to the latest release — if this persists, tell support the app shows CONFIG-MISSING.',
+      );
+      return;
+    }
     const cleanEmail = email.trim();
     if (!cleanEmail || !password) {
       setError('Enter your email and password.');
@@ -43,22 +71,27 @@ export default function AuthScreen() {
     }
     setBusy(true);
     try {
-      const res = mode === 'signin'
-        ? await authClient.signIn.email({ email: cleanEmail, password })
-        : await authClient.signUp.email({ name: name.trim() || cleanEmail.split('@')[0], email: cleanEmail, password });
+      const action = mode === 'signin'
+        ? authClient.signIn.email({ email: cleanEmail, password })
+        : authClient.signUp.email({ name: name.trim() || cleanEmail.split('@')[0], email: cleanEmail, password });
+      const res = await withTimeout(
+        action,
+        25000,
+        'Login server is not responding (25s timeout). Check your connection — if it persists, the app origin may be blocked; tell support the app shows TIMEOUT.',
+      );
       if (res.error) {
-        setError(prettyAuthError(res.error));
+        setError(`${prettyAuthError(res.error)} (code: AUTH-FAILED)`);
         return;
       }
       // Reconcile the session hook explicitly so routing into the app never
       // depends on the hook's background refresh timing.
       try {
-        await authClient.getSession();
-      } catch {
-        /* hook will retry on its own; success path already validated */
+        await withTimeout(authClient.getSession(), 15000, 'Session check timed out.');
+      } catch (e) {
+        setError(`${prettyAuthError(e)} (code: SESSION-CHECK)`);
       }
     } catch (e) {
-      setError(prettyAuthError(e));
+      setError(`${prettyAuthError(e)} (code: REQUEST-FAILED)`);
     } finally {
       setBusy(false);
     }
@@ -137,6 +170,8 @@ export default function AuthScreen() {
 
         <p className="mt-4 text-center text-xs leading-relaxed text-stone-400">
           Your folders and transcripts are private to this account.
+          <br />
+          Login server: {authHost()}
         </p>
       </div>
     </div>
