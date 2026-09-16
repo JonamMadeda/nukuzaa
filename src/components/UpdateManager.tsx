@@ -5,6 +5,13 @@ import { useToast } from '../hooks/useToast';
 
 export const CHECK_UPDATES_EVENT = 'nukuzaa:check-updates';
 
+const RELEASES_URL = 'https://github.com/JonamMadeda/nukuzaa/releases/latest';
+
+/** Portable builds can't self-update (no installer to patch) — send them to the releases page. */
+function isPortableFailure(msg: string): boolean {
+  return /portable|not supported|installer|apply|replace|access|denied|permission/i.test(msg);
+}
+
 export function isDesktop(): boolean {
   return (
     typeof window !== 'undefined' &&
@@ -55,6 +62,12 @@ export default function UpdateManager() {
         setTotal(null);
         setPhase('available');
       } catch (e) {
+        // Background checks fail quietly (offline at startup shouldn't pop a
+        // dialog); manual checks report so the user isn't left guessing.
+        if (silent) {
+          setPhase('idle');
+          return;
+        }
         setPhase('error');
         setError(e instanceof Error ? e.message : String(e));
       }
@@ -98,6 +111,16 @@ export default function UpdateManager() {
     try {
       const { relaunch } = await import('@tauri-apps/plugin-process');
       await relaunch();
+    } catch (e) {
+      setPhase('error');
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const openReleasesPage = async () => {
+    try {
+      const { openUrl } = await import('@tauri-apps/plugin-opener');
+      await openUrl(RELEASES_URL);
     } catch (e) {
       setPhase('error');
       setError(e instanceof Error ? e.message : String(e));
@@ -165,6 +188,12 @@ export default function UpdateManager() {
         {phase === 'error' && error && (
           <p className="mt-4 rounded-xl bg-red-50 p-3 text-xs leading-relaxed text-red-700">{error}</p>
         )}
+        {phase === 'error' && error && isPortableFailure(error) && (
+          <p className="mt-2 rounded-xl bg-amber-50 p-3 text-xs leading-relaxed text-amber-800">
+            This looks like the portable build, which can't update itself — download the new
+            portable .exe from the releases page and replace the old file.
+          </p>
+        )}
 
         {phase === 'downloading' && (
           <div className="mt-4">
@@ -189,6 +218,15 @@ export default function UpdateManager() {
               className="rounded-xl px-4 py-2 text-sm font-medium text-stone-600 hover:bg-stone-100"
             >
               Later
+            </button>
+          )}
+          {(phase === 'available' || phase === 'error') && (
+            <button
+              onClick={openReleasesPage}
+              title="Open the GitHub releases page to download manually"
+              className="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium text-stone-700 ring-1 ring-stone-300 hover:bg-stone-100"
+            >
+              <ArrowDownToLine className="h-4 w-4" /> Get it manually
             </button>
           )}
           {phase === 'available' && (
