@@ -4,7 +4,8 @@ import Dashboard, { type FolderViewMode } from './components/Dashboard';
 import Workspace from './components/Workspace';
 import TranscriptReaderModal from './components/TranscriptReaderModal';
 import CreateFolderModal from './components/CreateFolderModal';
-import AuthScreen from './components/AuthScreen';
+import AccountPage from './components/AccountPage';
+import ShortcutsModal from './components/ShortcutsModal';
 import UpdateManager, { CHECK_UPDATES_EVENT } from './components/UpdateManager';
 import { ToastProvider, useToast } from './hooks/useToast';
 import { authClient, SESSION_EXPIRED_EVENT, clearTokenCache, setCurrentUser } from './lib/auth';
@@ -15,11 +16,12 @@ import {
   getDbHost,
   listFoldersWithCounts,
   resetDbClient,
+  updateFolder,
 } from './lib/db';
-import type { DbStatus, Folder, TranscriptDoc } from './lib/types';
+import type { DbStatus, Folder, FolderAccent, FolderSort, TranscriptDoc } from './lib/types';
 import { friendlyDbError } from './lib/utils';
 
-type View = { name: 'dashboard' } | { name: 'workspace'; folder: Folder };
+type View = { name: 'dashboard' } | { name: 'workspace'; folder: Folder } | { name: 'account' };
 
 /** Initial try + scheduled re-tries (4s, 8s, 12s, 16s). Covers Neon cold starts. */
 const MAX_ATTEMPTS = 5;
@@ -37,10 +39,14 @@ function Shell() {
   const retryTimer = useRef<number | null>(null);
   const [view, setView] = useState<View>({ name: 'dashboard' });
   const [search, setSearch] = useState('');
-  const [mode, setMode] = useState<FolderViewMode>('grid');
+  const [mode, setMode] = useState<FolderViewMode>('list');
+  const [folderSort, setFolderSort] = useState<FolderSort>('recent');
   const [createOpen, setCreateOpen] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [editingFolder, setEditingFolder] = useState<Folder | null>(null);
   const [activeDoc, setActiveDoc] = useState<TranscriptDoc | null>(null);
+  const [wsRefresh, setWsRefresh] = useState(0);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [appVersion, setAppVersion] = useState<string | null>(null);
   const [signingOut, setSigningOut] = useState(false);
   const { data: session, isPending: sessionPending, refetch: refetchSession } = authClient.useSession();
@@ -76,8 +82,8 @@ function Shell() {
       try {
         await checkConnection();
         setStatus('ready');
-        setFolders(await listFoldersWithCounts());
-        if (attemptRef.current > 0) notify('success', 'Back online — Neon connected.');
+        setFolders(await listFoldersWithCounts(folderSort));
+        if (attemptRef.current > 0) notify('success', 'Back online.');
       } catch (e) {
         attemptRef.current += 1;
         setAttempt(attemptRef.current);
@@ -99,7 +105,7 @@ function Shell() {
       }
       setLoadingFolders(false);
     },
-    [notify],
+    [notify, folderSort],
   );
 
   // Mirror the server-validated session into the query layer. Folders load
@@ -151,7 +157,7 @@ function Shell() {
   // Keep workspace header title fresh when counts change.
   const refreshCounts = useCallback(async () => {
     try {
-      const next = await listFoldersWithCounts();
+      const next = await listFoldersWithCounts(folderSort);
       setFolders(next);
       setView((v) =>
         v.name === 'workspace'
@@ -161,15 +167,60 @@ function Shell() {
     } catch {
       /* non-fatal — workspace already shows its own error state */
     }
-  }, []);
+  }, [folderSort]);
 
-  const handleCreate = async (title: string) => {
+  // Keyboard shortcuts: / focus search, n new folder, ? cheatsheet, Esc back out.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      const typing =
+        !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
+      if (e.key === 'Escape') {
+        if (shortcutsOpen) setShortcutsOpen(false);
+        else if (activeDoc) {
+          setActiveDoc(null);
+          setWsRefresh((n) => n + 1);
+        } else if (createOpen || editingFolder != null) {
+          setCreateOpen(false);
+          setEditingFolder(null);
+        } else if (view.name !== 'dashboard') setView({ name: 'dashboard' });
+        return;
+      }
+      if (typing || e.ctrlKey || e.metaKey || e.altKey || !userId) return;
+      if (e.key === '/') {
+        e.preventDefault();
+        document.getElementById(view.name === 'workspace' ? 'workspace-url' : 'dashboard-search')?.focus();
+      } else if (e.key === 'n' && view.name === 'dashboard') {
+        setCreateOpen(true);
+      } else if (e.key === '?') {
+        setShortcutsOpen(true);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [activeDoc, createOpen, editingFolder, shortcutsOpen, view.name, userId]);
+
+  const handleCreate = async (title: string, accent: FolderAccent) => {
     setCreating(true);
     try {
-      const f = await createFolder(title);
+      const f = await createFolder(title, accent);
       setFolders((prev) => [f, ...prev]);
       setCreateOpen(false);
       notify('success', `Folder “${f.title}” created.`);
+    } catch (e) {
+      notify('error', friendlyDbError(e));
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handleSaveFolderEdit = async (id: string, title: string, accent: FolderAccent) => {
+    setCreating(true);
+    try {
+      await updateFolder(id, { title, accent });
+      setFolders((prev) => prev.map((f) => (f.id === id ? { ...f, title: title.trim(), accent } : f)));
+      setEditingFolder(null);
+      notify('success', 'Folder updated.');
     } catch (e) {
       notify('error', friendlyDbError(e));
     } finally {
@@ -230,7 +281,7 @@ function Shell() {
   }
 
   if (!userId) {
-    return <AuthScreen />;
+    return <AccountPage userId={null} userEmail={null} signingOut={false} onSignOut={() => {}} />;
   }
 
   return (
@@ -239,14 +290,19 @@ function Shell() {
         status={status}
         onRetry={() => void loadFolders()}
         autoRetrying={autoRetrying}
-        attempt={attempt}
-        userEmail={userEmail}
-        onSignOut={() => void handleSignOut()}
-        signingOut={signingOut}
+        onOpenAccount={() => setView({ name: 'account' })}
       />
 
       <main className="flex-1">
-        {view.name === 'dashboard' ? (
+        {view.name === 'account' ? (
+          <AccountPage
+            userId={userId}
+            userEmail={userEmail}
+            signingOut={signingOut}
+            onSignOut={() => void handleSignOut()}
+            onBack={() => setView({ name: 'dashboard' })}
+          />
+        ) : view.name === 'dashboard' ? (
           <Dashboard
             folders={folders}
             loading={loadingFolders}
@@ -258,23 +314,30 @@ function Shell() {
             onSearch={setSearch}
             mode={mode}
             onMode={setMode}
+            folderSort={folderSort}
+            onFolderSort={setFolderSort}
             onOpenCreate={() => setCreateOpen(true)}
             onOpenFolder={(f) => setView({ name: 'workspace', folder: f })}
+            onOpenDoc={setActiveDoc}
+            onEditFolder={setEditingFolder}
             onDeleteFolder={handleDeleteFolder}
             onRetry={() => void loadFolders()}
+            onFoldersChanged={() => void loadFolders()}
           />
         ) : (
           <Workspace
             folder={view.folder}
+            allFolders={folders}
             onBack={() => setView({ name: 'dashboard' })}
             onDocsChanged={refreshCounts}
             onOpenDoc={setActiveDoc}
+            refreshKey={wsRefresh}
           />
         )}
       </main>
 
-      <footer className="flex items-center justify-center gap-2 border-t border-stone-200 py-4 text-center text-xs text-stone-400">
-        <span>Nukuzaa{appVersion ? ` v${appVersion}` : ''} · transcripts on your device · stored in Neon</span>
+      <footer className="mt-auto flex items-center justify-center gap-2 border-t border-stone-200 py-2.5 text-center text-xs text-stone-400">
+        <span>Nukuzaa{appVersion ? ` v${appVersion}` : ''} · transcripts on your device · private to your account</span>
         <span aria-hidden>·</span>
         <button
           onClick={() => window.dispatchEvent(new Event(CHECK_UPDATES_EVENT))}
@@ -282,15 +345,38 @@ function Shell() {
         >
           Check for updates
         </button>
+        <span aria-hidden>·</span>
+        <button
+          onClick={() => setShortcutsOpen(true)}
+          title="Keyboard shortcuts (?)"
+          className="font-medium text-stone-500 underline decoration-dotted underline-offset-2 hover:text-stone-800"
+        >
+          Shortcuts
+        </button>
       </footer>
 
       <CreateFolderModal
-        open={createOpen}
+        open={createOpen || editingFolder != null}
         creating={creating}
-        onClose={() => setCreateOpen(false)}
+        editing={
+          editingFolder ? { id: editingFolder.id, title: editingFolder.title, accent: editingFolder.accent } : null
+        }
+        onClose={() => {
+          setCreateOpen(false);
+          setEditingFolder(null);
+        }}
         onCreate={handleCreate}
+        onSaveEdit={handleSaveFolderEdit}
       />
-      <TranscriptReaderModal doc={activeDoc} onClose={() => setActiveDoc(null)} />
+      <TranscriptReaderModal
+        doc={activeDoc}
+        onClose={() => {
+          setActiveDoc(null);
+          setWsRefresh((n) => n + 1);
+        }}
+        onDocUpdated={setActiveDoc}
+      />
+      <ShortcutsModal open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
       <UpdateManager />
     </div>
   );

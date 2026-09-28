@@ -37,7 +37,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         {toasts.map((t) => (
           <div
             key={t.id}
-            className="toast-in pointer-events-auto flex items-start gap-2.5 rounded-xl border border-stone-200 bg-white px-3.5 py-3 shadow-lg"
+            className="toast-in pointer-events-auto flex items-start gap-2.5 rounded-none border border-stone-200 bg-white px-3.5 py-3 shadow-lg"
             role="status"
           >
             {t.kind === 'success' ? (

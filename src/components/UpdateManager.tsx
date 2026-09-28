@@ -131,7 +131,7 @@ export default function UpdateManager() {
 
   if (phase === 'checking') {
     return (
-      <div className="fixed bottom-5 left-5 z-[90] inline-flex items-center gap-2 rounded-full border border-stone-200 bg-white px-3.5 py-2 text-xs font-medium text-stone-600 shadow-lg">
+      <div className="fixed bottom-5 left-5 z-[90] inline-flex items-center gap-2 rounded-none border border-stone-200 bg-white px-3.5 py-2 text-xs font-medium text-stone-600 shadow-lg">
         <Loader2 className="h-3.5 w-3.5 animate-spin" /> Checking for updates…
       </div>
     );
@@ -145,10 +145,10 @@ export default function UpdateManager() {
         className="absolute inset-0 bg-stone-950/40"
         onClick={phase === 'available' || phase === 'error' ? () => setPhase('idle') : undefined}
       />
-      <div className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+      <div className="relative w-full max-w-md rounded-none border border-stone-200 bg-white p-6 shadow-xl">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-2.5">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-stone-900 text-white">
+            <span className="flex h-9 w-9 items-center justify-center rounded-none bg-stone-900 text-white">
               <ArrowDownToLine className="h-5 w-5" />
             </span>
             <div>
@@ -171,7 +171,7 @@ export default function UpdateManager() {
           {(phase === 'available' || phase === 'error') && (
             <button
               onClick={() => setPhase('idle')}
-              className="rounded-lg p-1.5 text-stone-400 hover:bg-stone-100 hover:text-stone-700"
+              className="rounded-none p-1.5 text-stone-400 hover:bg-stone-100 hover:text-stone-700"
               aria-label="Dismiss"
             >
               <X className="h-5 w-5" />
@@ -180,16 +180,16 @@ export default function UpdateManager() {
         </div>
 
         {update?.body && phase !== 'error' && (
-          <p className="mt-4 max-h-32 overflow-y-auto rounded-xl bg-stone-50 p-3 text-xs leading-relaxed text-stone-600">
+          <p className="mt-4 max-h-32 overflow-y-auto rounded-none bg-stone-50 p-3 text-xs leading-relaxed text-stone-600">
             {update.body}
           </p>
         )}
 
         {phase === 'error' && error && (
-          <p className="mt-4 rounded-xl bg-red-50 p-3 text-xs leading-relaxed text-red-700">{error}</p>
+          <p className="mt-4 rounded-none bg-red-50 p-3 text-xs leading-relaxed text-red-700">{error}</p>
         )}
         {phase === 'error' && error && isPortableFailure(error) && (
-          <p className="mt-2 rounded-xl bg-amber-50 p-3 text-xs leading-relaxed text-amber-800">
+          <p className="mt-2 rounded-none bg-amber-50 p-3 text-xs leading-relaxed text-amber-800">
             This looks like the portable build, which can't update itself — download the new
             portable .exe from the releases page and replace the old file.
           </p>
@@ -197,11 +197,11 @@ export default function UpdateManager() {
 
         {phase === 'downloading' && (
           <div className="mt-4">
-            <div className="h-2 overflow-hidden rounded-full bg-stone-100">
+            <div className="h-2 overflow-hidden rounded-none bg-stone-100">
               {pct === null ? (
-                <div className="h-full w-1/3 animate-pulse rounded-full bg-stone-900" />
+                <div className="h-full w-1/3 animate-pulse rounded-none bg-stone-900" />
               ) : (
-                <div className="h-full rounded-full bg-stone-900 transition-all" style={{ width: `${pct}%` }} />
+                <div className="h-full rounded-none bg-stone-900 transition-all" style={{ width: `${pct}%` }} />
               )}
             </div>
             <p className="mt-1.5 text-xs text-stone-500">
@@ -215,7 +215,7 @@ export default function UpdateManager() {
           {(phase === 'available' || phase === 'error') && (
             <button
               onClick={() => setPhase('idle')}
-              className="rounded-xl px-4 py-2 text-sm font-medium text-stone-600 hover:bg-stone-100"
+              className="rounded-none px-4 py-2 text-sm font-medium text-stone-600 hover:bg-stone-100"
             >
               Later
             </button>
@@ -224,7 +224,7 @@ export default function UpdateManager() {
             <button
               onClick={openReleasesPage}
               title="Open the GitHub releases page to download manually"
-              className="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium text-stone-700 ring-1 ring-stone-300 hover:bg-stone-100"
+              className="inline-flex items-center gap-2 rounded-none px-4 py-2 text-sm font-medium text-stone-700 ring-1 ring-stone-300 hover:bg-stone-100"
             >
               <ArrowDownToLine className="h-4 w-4" /> Get it manually
             </button>
@@ -232,7 +232,7 @@ export default function UpdateManager() {
           {phase === 'available' && (
             <button
               onClick={downloadAndInstall}
-              className="inline-flex items-center gap-2 rounded-xl bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-700"
+              className="inline-flex items-center gap-2 rounded-none bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-700"
             >
               <ArrowDownToLine className="h-4 w-4" /> Download & install
             </button>
@@ -240,7 +240,7 @@ export default function UpdateManager() {
           {phase === 'downloading' && (
             <button
               disabled
-              className="inline-flex items-center gap-2 rounded-xl bg-stone-900 px-4 py-2 text-sm font-medium text-white opacity-70"
+              className="inline-flex items-center gap-2 rounded-none bg-stone-900 px-4 py-2 text-sm font-medium text-white opacity-70"
             >
               <Loader2 className="h-4 w-4 animate-spin" /> Installing…
             </button>
@@ -248,7 +248,7 @@ export default function UpdateManager() {
           {phase === 'ready' && (
             <button
               onClick={restartNow}
-              className="inline-flex items-center gap-2 rounded-xl bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-700"
+              className="inline-flex items-center gap-2 rounded-none bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-700"
             >
               <Rocket className="h-4 w-4" /> Restart now
             </button>
@@ -256,7 +256,7 @@ export default function UpdateManager() {
           {phase === 'error' && (
             <button
               onClick={() => void checkNow(false)}
-              className="inline-flex items-center gap-2 rounded-xl bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-700"
+              className="inline-flex items-center gap-2 rounded-none bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-700"
             >
               <RefreshCw className="h-4 w-4" /> Try again
             </button>

@@ -1,4 +1,4 @@
-import type { CaptionCue, ExtractionResult } from './types';
+import type { CaptionCue, ExtractionResult, TrackInfo } from './types';
 
 // ---------------------------------------------------------------------------
 // Local YouTube transcript extractor.
@@ -111,9 +111,25 @@ async function postJson(url: string, data: unknown): Promise<string> {
 
 interface CaptionTrack {
   baseUrl: string;
-  name?: string;
+  /** YouTubei sends { runs: [{ text }] }; the scrape fallback sends a string. */
+  name?: unknown;
   languageCode?: string;
   kind?: string;
+}
+
+/** Human label for the language picker. */
+export function trackLabel(t: Pick<CaptionTrack, 'name' | 'languageCode' | 'kind'>): string {
+  const n = t.name;
+  if (typeof n === 'string' && n.length > 0) return n;
+  if (n && typeof n === 'object' && 'runs' in n) {
+    const runs = (n as { runs?: Array<{ text?: unknown }> }).runs;
+    if (Array.isArray(runs)) {
+      const text = runs.map((r) => String(r?.text ?? '')).join('');
+      if (text) return text;
+    }
+  }
+  const lang = t.languageCode || 'unknown';
+  return t.kind === 'asr' ? `${lang} (auto-generated)` : lang;
 }
 
 function decodePlayerString(s: string): string {
@@ -191,7 +207,7 @@ function parseCaptionTracks(html: string): CaptionTrack[] {
       .filter((t) => typeof t.baseUrl === 'string')
       .map((t) => ({
         baseUrl: String(t.baseUrl),
-        name: typeof t.name === 'object' && t.name !== null ? undefined : String(t.name ?? ''),
+        name: t.name,
         languageCode: typeof t.languageCode === 'string' ? t.languageCode : undefined,
         kind: typeof t.kind === 'string' ? t.kind : undefined,
       }));
@@ -277,9 +293,29 @@ export async function extractTranscriptFromUrl(input: string): Promise<Extractio
       'That does not look like a YouTube URL. Paste a watch, youtu.be, or Shorts link.',
     );
   }
+  const { tracks, title } = await fetchVideoTracks(videoId);
+  const chosen = await downloadFirstUsableTrack(tracks);
   const url = WATCH_URL(videoId);
+  const rawText = chosen.captions.map((c) => c.text).join(' ');
+  const finalTitle =
+    title ?? (await fetchOEmbedTitle(videoId)) ?? `YouTube video ${videoId}`;
 
-  // 1) Caption tracks: YouTubei first, watch-page scrape as fallback.
+  return {
+    videoId,
+    title: finalTitle,
+    thumbnail: THUMB_URL(videoId),
+    url,
+    rawText,
+    captions: chosen.captions,
+    trackLang: chosen.track.languageCode ?? null,
+    trackKind: chosen.track.kind ?? null,
+    availableTracks: dedupeTrackInfos(tracks),
+  };
+}
+
+/** Shared step 1: caption tracks via YouTubei, watch-page scrape as fallback. */
+async function fetchVideoTracks(videoId: string): Promise<{ tracks: CaptionTrack[]; title: string | null }> {
+  const url = WATCH_URL(videoId);
   let tracks: CaptionTrack[] = [];
   let title: string | null = null;
   let youtubeiOk = false;
@@ -315,10 +351,13 @@ export async function extractTranscriptFromUrl(input: string): Promise<Extractio
       'No captions found for this video. The uploader may have disabled them, or auto-captions are still processing for a very recent upload.',
     );
   }
+  return { tracks, title };
+}
 
-  // 2) Try candidate tracks in order — a session-bound or empty file is
-  // skipped in favour of the next track instead of failing outright.
-  let captions: CaptionCue[] = [];
+/** Try candidate tracks in order — a session-bound or empty file is skipped. */
+async function downloadFirstUsableTrack(
+  tracks: CaptionTrack[],
+): Promise<{ track: CaptionTrack; captions: CaptionCue[] }> {
   let networkFailed = false;
   for (const track of orderTracks(tracks)) {
     let xml: string;
@@ -330,22 +369,103 @@ export async function extractTranscriptFromUrl(input: string): Promise<Extractio
       continue;
     }
     if (!xml || xml.trim().length === 0) continue; // expired/session-bound URL
-    captions = parseCaptionXml(xml);
-    if (captions.length > 0) break;
+    const captions = parseCaptionXml(xml);
+    if (captions.length > 0) return { track, captions };
   }
+  if (networkFailed && tracks.length > 0) {
+    throw new TranscriptError('NETWORK', 'Caption download failed. Please retry.');
+  }
+  throw new TranscriptError(
+    'NO_CAPTIONS',
+    'Caption files were empty or in an unknown format. Try again later — auto-captions can take time to appear.',
+  );
+}
+
+function dedupeTrackInfos(tracks: CaptionTrack[]): TrackInfo[] {
+  const seen = new Set<string>();
+  const out: TrackInfo[] = [];
+  for (const t of tracks) {
+    const key = `${t.languageCode ?? ''}|${t.kind ?? ''}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({
+      languageCode: t.languageCode ?? '',
+      label: trackLabel(t),
+      kind: t.kind ?? '',
+    });
+  }
+  return out;
+}
+
+/** Languages a video offers (for the picker). Throws the usual TranscriptError. */
+export async function listAvailableTracks(input: string): Promise<{ videoId: string; tracks: TrackInfo[] }> {
+  const videoId = extractVideoId(input);
+  if (!videoId) throw new TranscriptError('INVALID_URL', 'That does not look like a YouTube URL.');
+  const { tracks } = await fetchVideoTracks(videoId);
+  return { videoId, tracks: dedupeTrackInfos(tracks) };
+}
+
+/** Re-extract in a specific language (fresh track URLs — never stored). */
+export async function extractTrackFromUrl(input: string, languageCode: string): Promise<ExtractionResult> {
+  const videoId = extractVideoId(input);
+  if (!videoId) throw new TranscriptError('INVALID_URL', 'That does not look like a YouTube URL.');
+  const { tracks, title } = await fetchVideoTracks(videoId);
+  const want = languageCode.toLowerCase();
+  const match =
+    orderTracks(tracks).find((t) => (t.languageCode ?? '').toLowerCase() === want) ??
+    orderTracks(tracks).find((t) => (t.languageCode ?? '').toLowerCase().startsWith(want));
+  if (!match) {
+    throw new TranscriptError('NO_CAPTIONS', `No ${languageCode} captions found for this video.`);
+  }
+  let xml: string;
+  try {
+    xml = await fetchText(match.baseUrl);
+  } catch (e) {
+    if (e instanceof TranscriptError) throw e;
+    throw new TranscriptError('NETWORK', 'Caption download failed. Please retry.');
+  }
+  const captions = parseCaptionXml(xml);
   if (captions.length === 0) {
-    if (networkFailed && tracks.length > 0) {
-      throw new TranscriptError('NETWORK', 'Caption download failed. Please retry.');
-    }
-    throw new TranscriptError(
-      'NO_CAPTIONS',
-      'Caption files were empty or in an unknown format. Try again later — auto-captions can take time to appear.',
-    );
+    throw new TranscriptError('NO_CAPTIONS', 'That caption file was empty or in an unknown format.');
   }
+  const url = WATCH_URL(videoId);
+  return {
+    videoId,
+    title: title ?? (await fetchOEmbedTitle(videoId)) ?? `YouTube video ${videoId}`,
+    thumbnail: THUMB_URL(videoId),
+    url,
+    rawText: captions.map((c) => c.text).join(' '),
+    captions,
+    trackLang: match.languageCode ?? null,
+    trackKind: match.kind ?? null,
+    availableTracks: dedupeTrackInfos(tracks),
+  };
+}
 
-  const rawText = captions.map((c) => c.text).join(' ');
-  const finalTitle =
-    title ?? (await fetchOEmbedTitle(videoId)) ?? `YouTube video ${videoId}`;
-
-  return { videoId, title: finalTitle, thumbnail: THUMB_URL(videoId), url, rawText, captions };
+/** Extract video IDs from a playlist URL (up to 50, in playlist order). */
+export async function extractPlaylistIds(input: string): Promise<{ playlistId: string; videoIds: string[] }> {
+  const raw = input.trim();
+  let listId: string | null = null;
+  try {
+    const u = new URL(raw.includes('://') ? raw : `https://${raw}`);
+    listId = u.searchParams.get('list');
+  } catch {
+    listId = null;
+  }
+  if (!listId) throw new TranscriptError('INVALID_URL', 'That URL has no playlist (?list=…).');
+  const html = await fetchText(`https://www.youtube.com/playlist?list=${encodeURIComponent(listId)}`);
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  const re = /"videoId":"([A-Za-z0-9_-]{11})"/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) !== null && ids.length < 50) {
+    if (!seen.has(m[1])) {
+      seen.add(m[1]);
+      ids.push(m[1]);
+    }
+  }
+  if (ids.length === 0) {
+    throw new TranscriptError('NO_CAPTIONS', 'No videos found in that playlist (it may be private).');
+  }
+  return { playlistId: listId, videoIds: ids };
 }
