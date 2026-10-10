@@ -31,10 +31,10 @@ export default function MoveDocModal({ doc, folders, onClose, onMove }: Props) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-stone-950/50" onClick={busyId ? undefined : onClose} />
-      <div className="relative w-full max-w-md overflow-hidden rounded-none border border-stone-200 bg-white shadow-2xl">
+      <div className="relative w-full max-w-md overflow-hidden rounded-lg border border-stone-200 bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-stone-200 p-5">
           <div className="flex items-center gap-2.5">
-            <span className="flex h-9 w-9 items-center justify-center rounded-none bg-stone-900 text-white">
+            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-stone-900 text-white">
               <FolderInput className="h-5 w-5" />
             </span>
             <h2 className="font-semibold">Move document</h2>
@@ -43,7 +43,7 @@ export default function MoveDocModal({ doc, folders, onClose, onMove }: Props) {
             <button
               onClick={onClose}
               aria-label="Close move dialog"
-              className="rounded-none p-1.5 text-stone-400 hover:bg-stone-100 hover:text-stone-700"
+              className="rounded-lg p-1.5 text-stone-400 hover:bg-stone-100 hover:text-stone-700"
             >
               <X className="h-5 w-5" />
             </button>
@@ -72,13 +72,13 @@ export default function MoveDocModal({ doc, folders, onClose, onMove }: Props) {
                             void choose(f.id, true);
                           }}
                           disabled={busyId != null}
-                          className="rounded-none bg-red-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-600 disabled:opacity-50"
+                          className="rounded-lg bg-red-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-600 disabled:opacity-50"
                         >
                           Replace
                         </button>
                         <button
                           onClick={() => setConflictFolder(null)}
-                          className="rounded-none border border-stone-300 px-3 py-1.5 text-xs font-medium text-stone-700 hover:bg-stone-100"
+                          className="rounded-lg border border-stone-300 px-3 py-1.5 text-xs font-medium text-stone-700 hover:bg-stone-100"
                         >
                           Keep both
                         </button>

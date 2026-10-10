@@ -234,6 +234,49 @@ export async function listFavoriteDocs(limit = 8): Promise<TranscriptDoc[]> {
   return rows.map(toDoc);
 }
 
+/** Transcripts with at least one saved cue highlight, for the dashboard shelf. */
+export async function listHighlightedDocs(limit = 8): Promise<TranscriptDoc[]> {
+  const uid = requireUserId();
+  const rows = await authed<Record<string, unknown>>(
+    (txn) => txn`
+      select t.id::text as id, t."folderId"::text as "folderId", t."videoId" as "videoId",
+             t.title, t.thumbnail, t.url, t."rawText" as "rawText",
+             t."captionsJson" as "captions", t."createdAt" as "createdAt",
+             t.notes, t.tags, t.favorite,
+             t.edited_text as "editedText", t.highlights,
+             t.track_lang as "trackLang", t.track_kind as "trackKind",
+             f.title as "folderTitle"
+      from transcripts t join folders f on f.id = t."folderId"
+      where t.user_id = ${uid} and jsonb_typeof(t.highlights) = 'array'
+        and jsonb_array_length(t.highlights) > 0 and not f.archived
+      order by t."createdAt" desc
+      limit ${limit}`,
+  );
+  return rows.map(toDoc);
+}
+
+/** Load a user's recently opened docs in the requested order. */
+export async function listRecentDocs(ids: string[]): Promise<TranscriptDoc[]> {
+  if (ids.length === 0) return [];
+  const uid = requireUserId();
+  const orderedIds = ids.slice(0, 8).join(',');
+  const rows = await authed<Record<string, unknown>>(
+    (txn) => txn`
+      select t.id::text as id, t."folderId"::text as "folderId", t."videoId" as "videoId",
+             t.title, t.thumbnail, t.url, t."rawText" as "rawText",
+             t."captionsJson" as "captions", t."createdAt" as "createdAt",
+             t.notes, t.tags, t.favorite,
+             t.edited_text as "editedText", t.highlights,
+             t.track_lang as "trackLang", t.track_kind as "trackKind",
+             f.title as "folderTitle"
+      from transcripts t join folders f on f.id = t."folderId"
+      where t.user_id = ${uid} and t.id::text = any(string_to_array(${orderedIds}, ','))
+        and not f.archived
+      order by array_position(string_to_array(${orderedIds}, ','), t.id::text)` ,
+  );
+  return rows.map(toDoc);
+}
+
 export async function deleteFolder(id: string): Promise<void> {
   const uid = requireUserId();
   await authed((txn) => txn`delete from folders where id = ${id}::uuid and user_id = ${uid}`);

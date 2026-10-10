@@ -99,10 +99,10 @@ export default function BulkImportModal({ open, initialText, onClose, onExpandPl
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-stone-950/50" onClick={running ? undefined : onClose} />
-      <div className="relative flex max-h-[88vh] w-full max-w-lg flex-col overflow-hidden rounded-none border border-stone-200 bg-white shadow-2xl">
+      <div className="relative flex max-h-[88vh] w-full max-w-lg flex-col overflow-hidden rounded-lg border border-stone-200 bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-stone-200 p-5">
           <div className="flex items-center gap-2.5">
-            <span className="flex h-9 w-9 items-center justify-center rounded-none bg-stone-900 text-white">
+            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-stone-900 text-white">
               <ListPlus className="h-5 w-5" />
             </span>
             <h2 className="font-semibold">Bulk import</h2>
@@ -111,7 +111,7 @@ export default function BulkImportModal({ open, initialText, onClose, onExpandPl
             <button
               onClick={onClose}
               aria-label="Close bulk import"
-              className="rounded-none p-1.5 text-stone-400 hover:bg-stone-100 hover:text-stone-700"
+              className="rounded-lg p-1.5 text-stone-400 hover:bg-stone-100 hover:text-stone-700"
             >
               <X className="h-5 w-5" />
             </button>
@@ -128,7 +128,7 @@ export default function BulkImportModal({ open, initialText, onClose, onExpandPl
             rows={5}
             disabled={running}
             placeholder={'https://www.youtube.com/watch?v=…\nhttps://youtu.be/…\nhttps://www.youtube.com/playlist?list=…'}
-            className="mt-3 w-full rounded-none border border-stone-300 p-2.5 font-mono text-xs outline-none placeholder:text-stone-400 focus:border-stone-900 disabled:bg-stone-50"
+            className="mt-3 w-full rounded-lg border border-stone-300 p-2.5 font-mono text-xs outline-none placeholder:text-stone-400 focus:border-stone-900 disabled:bg-stone-50"
           />
           {items.length > 0 && (
             <ul className="mt-3 flex max-h-56 flex-col gap-1.5 overflow-y-auto">
@@ -177,7 +177,7 @@ export default function BulkImportModal({ open, initialText, onClose, onExpandPl
           {!running && (
             <button
               onClick={onClose}
-              className="rounded-none px-4 py-2 text-sm font-medium text-stone-600 hover:bg-stone-100"
+              className="rounded-lg px-4 py-2 text-sm font-medium text-stone-600 hover:bg-stone-100"
             >
               Close
             </button>
@@ -185,7 +185,7 @@ export default function BulkImportModal({ open, initialText, onClose, onExpandPl
           <button
             onClick={start}
             disabled={running || lineCount === 0}
-            className="inline-flex items-center gap-2 rounded-none bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-700 disabled:opacity-50"
+            className="ui-primary"
           >
             {running && <Loader2 className="h-4 w-4 animate-spin" />}
             {running ? 'Importing…' : `Import ${lineCount} ${lineCount === 1 ? 'line' : 'lines'}`}

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlignLeft,
+  ArrowLeft,
   Bookmark,
   Check,
   ChevronDown,
@@ -12,11 +13,12 @@ import {
   Link2,
   ListOrdered,
   Pencil,
+  Sparkles,
   Star,
   Tag,
   X,
 } from 'lucide-react';
-import type { TrackInfo, TranscriptDoc } from '../lib/types';
+import type { Folder, TrackInfo, TranscriptDoc } from '../lib/types';
 import {
   buildMarkdown,
   buildSrt,
@@ -32,14 +34,17 @@ import { extractTrackFromUrl, listAvailableTracks } from '../lib/extractor';
 import { replaceTranscriptContent, updateTranscriptMeta } from '../lib/db';
 import { cacheDoc } from '../lib/cache';
 import { useToast } from '../hooks/useToast';
+import VideoSummary from './VideoSummary';
 
 interface Props {
-  doc: TranscriptDoc | null;
-  onClose: () => void;
+  doc: TranscriptDoc;
+  /** Folder the user came from (for the back button). Null = dashboard. */
+  originFolder: Folder | null;
+  onBack: () => void;
   onDocUpdated?: (d: TranscriptDoc) => void;
 }
 
-type ReaderMode = 'paragraphs' | 'timestamps';
+type ReaderMode = 'paragraphs' | 'timestamps' | 'summary';
 const MAX_MATCHES = 200;
 
 async function copyText(text: string): Promise<void> {
@@ -66,11 +71,11 @@ async function openExternal(url: string): Promise<boolean> {
   }
 }
 
-export default function TranscriptReaderModal({ doc, onClose, onDocUpdated }: Props) {
+export default function ReaderPage({ doc, originFolder, onBack, onDocUpdated }: Props) {
   const { notify } = useToast();
   const docId = doc?.id ?? null;
 
-  const [mode, setMode] = useState<ReaderMode>('paragraphs');
+  const [mode, setMode] = useState<ReaderMode>('summary');
   const [search, setSearch] = useState('');
   const [activeMatch, setActiveMatch] = useState(0);
   const [copied, setCopied] = useState(false);
@@ -86,7 +91,7 @@ export default function TranscriptReaderModal({ doc, onClose, onDocUpdated }: Pr
 
   // Reset per-document UI + remember for offline reading.
   useEffect(() => {
-    setMode('paragraphs');
+    setMode('summary');
     setSearch('');
     setActiveMatch(0);
     setCopied(false);
@@ -102,6 +107,7 @@ export default function TranscriptReaderModal({ doc, onClose, onDocUpdated }: Pr
 
   const displayText = useMemo(() => (doc ? docDisplayText(doc) : ''), [doc]);
   const q = search.trim().toLowerCase();
+  const inSummary = mode === 'summary';
 
   // -- Search matches -------------------------------------------------------
   const paraOffsets = useMemo(() => {
@@ -300,127 +306,176 @@ export default function TranscriptReaderModal({ doc, onClose, onDocUpdated }: Pr
   };
 
   return (
-    <div className="print-root fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="no-print absolute inset-0 bg-stone-950/50" onClick={onClose} />
-      <div className="print-area relative flex max-h-[88vh] w-full max-w-3xl flex-col overflow-hidden rounded-none border border-stone-200 bg-white shadow-2xl">
-        {/* Header */}
-        <div className="no-print flex items-start gap-4 border-b border-stone-200 p-5">
-          {current.thumbnail && (
-            <img src={current.thumbnail} alt="" className="hidden h-16 w-28 shrink-0 rounded-none object-cover sm:block" />
+    <div className="mx-auto max-w-5xl px-4 py-5 sm:px-6">
+      {/* Row 0 — navigation + title */}
+      <div className="flex flex-wrap items-center gap-2.5">
+        <button
+          onClick={onBack}
+          className="no-print inline-flex shrink-0 items-center gap-2 rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm font-medium text-stone-700 hover:bg-stone-100"
+        >
+          <ArrowLeft className="h-4 w-4" /> {originFolder ? 'Back to folder' : 'Back to dashboard'}
+        </button>
+        <div className="min-w-0 flex-1 leading-tight">
+          <h1 className="truncate text-lg font-bold tracking-tight">{current.title}</h1>
+          <p className="truncate text-xs text-stone-500">
+            {originFolder ? `In “${originFolder.title}”` : 'From your library'} · {current.captions.length} cues
+          </p>
+        </div>
+        <button
+          onClick={toggleFavorite}
+          title={current.favorite ? 'Remove from favorites' : 'Add to favorites'}
+          className={cn(
+            'no-print shrink-0 rounded-lg border border-stone-300 bg-white p-2 transition hover:bg-amber-50',
+            current.favorite ? 'text-amber-500' : 'text-stone-300 hover:text-amber-500',
           )}
-          <div className="min-w-0 flex-1">
-            <div className="flex items-start gap-2">
-              <h2 className="line-clamp-2 flex-1 font-semibold leading-snug">{current.title}</h2>
-              <button
-                onClick={toggleFavorite}
-                title={current.favorite ? 'Remove from favorites' : 'Add to favorites'}
-                className={cn(
-                  'shrink-0 rounded-none p-1.5 transition hover:bg-amber-50',
-                  current.favorite ? 'text-amber-500' : 'text-stone-300 hover:text-amber-500',
-                )}
-              >
-                <Star className={cn('h-5 w-5', current.favorite && 'fill-amber-400')} />
-              </button>
-            </div>
-            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
-              <button
-                onClick={() => void openExternal(current.url)}
-                className="inline-flex items-center gap-1.5 text-sm font-medium text-sky-700 hover:text-sky-900 hover:underline"
-              >
-                <ExternalLink className="h-3.5 w-3.5" /> Watch video
-              </button>
-              {current.trackLang && (
-                <span className="inline-flex items-center gap-1 text-xs text-stone-500">
-                  <Languages className="h-3.5 w-3.5" />
-                  {current.trackLang}
-                  {current.trackKind === 'asr' ? ' (auto)' : ''}
-                </span>
-              )}
-              {current.editedText != null && (
-                <span className="bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800">Edited</span>
-              )}
-            </div>
+        >
+          <Star className={cn('h-5 w-5', current.favorite && 'fill-amber-400')} />
+        </button>
+      </div>
+
+      {/* Video meta card */}
+      <div className="mt-3 flex flex-col gap-3 rounded-xl border border-stone-200 bg-white p-3 shadow-card sm:flex-row sm:items-center sm:p-4">
+        {current.thumbnail && (
+          <img src={current.thumbnail} alt="" className="h-auto w-full shrink-0 rounded-lg object-cover sm:h-24 sm:w-44" />
+        )}
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <button
+              onClick={() => void openExternal(current.url)}
+              className="inline-flex items-center gap-1.5 text-sm font-medium text-sky-700 hover:text-sky-900 hover:underline"
+            >
+              <ExternalLink className="h-3.5 w-3.5" /> Watch video
+            </button>
+            {current.trackLang && (
+              <span className="inline-flex items-center gap-1 text-xs text-stone-500">
+                <Languages className="h-3.5 w-3.5" />
+                {current.trackLang}
+                {current.trackKind === 'asr' ? ' (auto)' : ''}
+              </span>
+            )}
+            {current.editedText != null && (
+              <span className="bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800">Edited</span>
+            )}
           </div>
+          <p className="mt-1 break-all text-xs text-stone-400">{current.url}</p>
+        </div>
+      </div>
+
+      {/* Print-only title block (screen: hidden, print: shown) */}
+      <div className="print-area hidden px-1 pb-1 pt-4 print:block">
+        <h1 className="text-xl font-bold text-black">{current.title}</h1>
+        <p className="mt-1 break-all text-xs text-stone-600">{current.url}</p>
+        <p className="mt-0.5 text-xs text-stone-500">
+          Exported from Nukuzaa on{' '}
+          {new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })} ·{' '}
+          {current.captions.length} cues · {mode === 'paragraphs' ? 'paragraphs' : mode === 'timestamps' ? 'timestamps' : 'summary'}
+        </p>
+      </div>
+
+      {/* Row 1 — view tabs */}
+      <div className="no-print mt-4 flex flex-col gap-1">
+        <span className="text-xs font-medium uppercase tracking-wide text-stone-500">View</span>
+        <div role="tablist" aria-label="Transcript view" className="flex rounded-lg bg-stone-100 p-1 text-sm sm:inline-flex sm:self-start">
           <button
-            onClick={onClose}
-            aria-label="Close reader"
-            className="rounded-none p-1.5 text-stone-400 hover:bg-stone-100 hover:text-stone-700"
+            role="tab"
+            aria-selected={mode === 'summary'}
+            onClick={() => setMode('summary')}
+            className={cn(
+              'inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg px-4 py-1.5 font-medium transition sm:flex-none',
+              mode === 'summary' ? 'bg-white text-stone-900 shadow' : 'text-stone-500 hover:text-stone-800',
+            )}
           >
-            <X className="h-5 w-5" />
+            <Sparkles className="h-4 w-4" /> Summary
+          </button>
+          <button
+            role="tab"
+            aria-selected={mode === 'paragraphs'}
+            onClick={() => setMode('paragraphs')}
+            className={cn(
+              'inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg px-4 py-1.5 font-medium transition sm:flex-none',
+              mode === 'paragraphs' ? 'bg-white text-stone-900 shadow' : 'text-stone-500 hover:text-stone-800',
+            )}
+          >
+            <AlignLeft className="h-4 w-4" /> Paragraphs
+          </button>
+          <button
+            role="tab"
+            aria-selected={mode === 'timestamps'}
+            onClick={() => setMode('timestamps')}
+            className={cn(
+              'inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg px-4 py-1.5 font-medium transition sm:flex-none',
+              mode === 'timestamps' ? 'bg-white text-stone-900 shadow' : 'text-stone-500 hover:text-stone-800',
+            )}
+          >
+            <ListOrdered className="h-4 w-4" /> Timestamps
           </button>
         </div>
+      </div>
 
-        {/* Toolbar */}
-        <div className="no-print flex flex-wrap items-center gap-2 border-b border-stone-100 px-5 py-3">
-          <div className="flex rounded-none bg-stone-100 p-1 text-sm">
-            <button
-              onClick={() => setMode('paragraphs')}
-              className={cn(
-                'inline-flex items-center gap-1.5 rounded-none px-3 py-1.5 font-medium transition',
-                mode === 'paragraphs' ? 'bg-white text-stone-900 shadow' : 'text-stone-500 hover:text-stone-800',
-              )}
-            >
-              <AlignLeft className="h-4 w-4" /> Paragraphs
-            </button>
-            <button
-              onClick={() => setMode('timestamps')}
-              className={cn(
-                'inline-flex items-center gap-1.5 rounded-none px-3 py-1.5 font-medium transition',
-                mode === 'timestamps' ? 'bg-white text-stone-900 shadow' : 'text-stone-500 hover:text-stone-800',
-              )}
-            >
-              <ListOrdered className="h-4 w-4" /> Timestamps
-            </button>
+      {/* Row 2 — search */}
+      {!inSummary && (
+        <div className="no-print mt-3 flex flex-col gap-1">
+          <span className="text-xs font-medium uppercase tracking-wide text-stone-500">Search in transcript</span>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              id="reader-search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') stepMatch(e.shiftKey ? -1 : 1);
+              }}
+              placeholder="Type to find matches… (Enter = next)"
+              aria-label="Search in transcript"
+              className="min-w-36 flex-1 rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm outline-none placeholder:text-stone-400 focus:border-yellow-600 focus:ring-2 focus:ring-yellow-100"
+            />
+            {q && (
+              <span className="inline-flex items-center gap-1 text-xs text-stone-500">
+                {matchCount} {matchCount === 1 ? 'match' : 'matches'}
+                <button
+                  onClick={() => stepMatch(-1)}
+                  title="Previous match (Shift+Enter)"
+                  className="rounded-lg border border-stone-300 bg-white p-1.5 hover:bg-stone-100"
+                >
+                  <ChevronUp className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={() => stepMatch(1)}
+                  title="Next match (Enter)"
+                  className="rounded-lg border border-stone-300 bg-white p-1.5 hover:bg-stone-100"
+                >
+                  <ChevronDown className="h-4 w-4" />
+                </button>
+              </span>
+            )}
           </div>
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') stepMatch(e.shiftKey ? -1 : 1);
-            }}
-            placeholder="Search in transcript…"
-            className="min-w-36 flex-1 rounded-none border border-stone-300 px-3 py-1.5 text-sm outline-none placeholder:text-stone-400 focus:border-stone-900"
-          />
-          {q && (
-            <span className="inline-flex items-center gap-1 text-xs text-stone-500">
-              {matchCount} {matchCount === 1 ? 'match' : 'matches'}
-              <button
-                onClick={() => stepMatch(-1)}
-                title="Previous match (Shift+Enter)"
-                className="rounded-none p-1 hover:bg-stone-100"
-              >
-                <ChevronUp className="h-4 w-4" />
-              </button>
-              <button
-                onClick={() => stepMatch(1)}
-                title="Next match (Enter)"
-                className="rounded-none p-1 hover:bg-stone-100"
-              >
-                <ChevronDown className="h-4 w-4" />
-              </button>
-            </span>
-          )}
-          <div className="flex items-center gap-2">
+        </div>
+      )}
+
+      {/* Row 3 — actions */}
+      {!inSummary && (
+        <div className="no-print mt-3 flex flex-col gap-1">
+          <span className="text-xs font-medium uppercase tracking-wide text-stone-500">Actions</span>
+          <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={exportPdf}
               title="Open the print dialog — filename defaults to this video's title"
-              className="inline-flex items-center gap-2 rounded-none border border-stone-300 px-3.5 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-100"
+              className="inline-flex items-center gap-2 rounded-lg border border-stone-300 bg-white px-3.5 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-100"
             >
               <FileDown className="h-4 w-4" />
               Export PDF
             </button>
             <button
               onClick={() => void doCopyAll(false)}
-              className="inline-flex items-center gap-2 rounded-none border border-stone-300 px-3.5 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-100"
+              className="inline-flex items-center gap-2 rounded-lg border border-stone-300 bg-white px-3.5 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-100"
             >
               {copied ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
               {copied ? 'Copied!' : 'Copy All'}
             </button>
             <details className="relative">
-              <summary className="inline-flex cursor-pointer list-none items-center gap-2 rounded-none border border-stone-300 px-3.5 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-100 [&::-webkit-details-marker]:hidden">
+              <summary className="inline-flex cursor-pointer list-none items-center gap-2 rounded-lg border border-stone-300 bg-white px-3.5 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-100 [&::-webkit-details-marker]:hidden">
                 More
               </summary>
-              <div className="absolute right-0 z-10 mt-1 w-52 border border-stone-200 bg-white py-1 shadow-lg">
+              <div className="absolute left-0 z-10 mt-1 w-52 border border-stone-200 bg-white py-1 shadow-lg">
                 <MenuItem label="Copy as Markdown" onClick={() => void doCopyAll(true)} />
                 <MenuItem
                   label="Download .txt"
@@ -440,139 +495,132 @@ export default function TranscriptReaderModal({ doc, onClose, onDocUpdated }: Pr
                 />
               </div>
             </details>
-          </div>
-        </div>
-
-        {/* Print-only title block (screen: hidden, print: shown) */}
-        <div className="hidden px-6 pb-1 pt-6 print:block">
-          <h1 className="text-xl font-bold text-black">{current.title}</h1>
-          <p className="mt-1 break-all text-xs text-stone-600">{current.url}</p>
-          <p className="mt-0.5 text-xs text-stone-500">
-            Exported from Nukuzaa on{' '}
-            {new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })} ·{' '}
-            {current.captions.length} cues · {mode === 'paragraphs' ? 'paragraphs' : 'timestamps'}
-          </p>
-        </div>
-
-        {/* Body */}
-        <div className="print-body nice-scroll min-h-0 flex-1 overflow-y-auto px-6 py-5">
-          {mode === 'paragraphs' ? (
-            editing ? (
-              <div className="no-print">
-                <textarea
-                  value={editDraft}
-                  onChange={(e) => setEditDraft(e.target.value)}
-                  rows={14}
-                  className="w-full rounded-none border border-stone-300 p-3 font-serif text-[1.05rem] leading-relaxed outline-none focus:border-stone-900"
-                />
-                <div className="mt-2 flex gap-2">
-                  <button
-                    onClick={saveEdit}
-                    disabled={saving}
-                    className="rounded-none bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-700 disabled:opacity-50"
-                  >
-                    {saving ? 'Saving…' : 'Save changes'}
-                  </button>
-                  <button
-                    onClick={() => setEditing(false)}
-                    className="rounded-none border border-stone-300 px-4 py-2 text-sm font-medium text-stone-700 hover:bg-stone-100"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <p className="font-serif text-[1.05rem] leading-relaxed text-stone-800">{renderParaMatches()}</p>
-            )
-          ) : (
-            <ol className="flex flex-col gap-2.5">
-              {current.captions.map((c, i) => {
-                const highlighted = current.highlights.includes(c.start);
-                return (
-                  <li
-                    key={i}
-                    ref={cueMatchIdx.includes(i) ? registerMark(cueMatchIdx.indexOf(i)) : undefined}
-                    className={cn('flex gap-3 text-[0.95rem] leading-relaxed', highlighted && 'bg-amber-50')}
-                  >
-                    <button
-                      onClick={() => void openExternal(timestampUrl(current.url, c.start))}
-                      title={`Open video at ${formatMMSS(c.start)}`}
-                      className="w-12 shrink-0 select-none self-start font-mono text-[0.8rem] font-medium text-sky-700 hover:underline"
-                    >
-                      {formatMMSS(c.start)}
-                    </button>
-                    <span className="flex-1 text-stone-800">{renderCueText(c.text, i)}</span>
-                    <span className="no-print flex shrink-0 items-start gap-0.5">
-                      <button
-                        onClick={() => toggleHighlight(c.start)}
-                        title={highlighted ? 'Remove highlight' : 'Highlight this cue'}
-                        className={cn(
-                          'rounded-none p-1 transition',
-                          highlighted ? 'text-amber-500' : 'text-stone-300 hover:text-amber-500',
-                        )}
-                      >
-                        <Bookmark className={cn('h-4 w-4', highlighted && 'fill-amber-300')} />
-                      </button>
-                      <button
-                        onClick={() => void copyText(timestampUrl(current.url, c.start)).then(() => notify('success', 'Timestamp link copied.'))}
-                        title="Copy link to this timestamp"
-                        className="rounded-none p-1 text-stone-300 transition hover:text-stone-600"
-                      >
-                        <Link2 className="h-4 w-4" />
-                      </button>
-                    </span>
-                  </li>
-                );
-              })}
-            </ol>
-          )}
-          {current.captions.length === 0 && (
-            <p className="text-sm text-stone-500">No timestamped cues stored for this document.</p>
-          )}
-        </div>
-
-        {/* Annotations */}
-        <details className="no-print border-t border-stone-200">
-          <summary className="flex cursor-pointer list-none items-center gap-2 px-6 py-3 text-sm font-medium text-stone-700 hover:bg-stone-50 [&::-webkit-details-marker]:hidden">
-            <Pencil className="h-4 w-4" /> Notes, tags & languages
-          </summary>
-          <div className="space-y-4 border-t border-stone-100 px-6 py-4">
-            {!editing && mode === 'paragraphs' && (
+            {mode === 'paragraphs' && !editing && (
               <button
                 onClick={() => {
                   setEditDraft(displayText);
                   setEditing(true);
                 }}
-                className="rounded-none border border-stone-300 px-3.5 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-100"
+                className="inline-flex items-center gap-2 rounded-lg border border-stone-300 bg-white px-3.5 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-100"
               >
-                Edit transcript text
+                <Pencil className="h-4 w-4" /> Edit transcript
               </button>
             )}
             {current.editedText != null && (
               <button
                 onClick={() => void persistMeta({ editedText: null }, 'Reverted to extracted text.')}
-                className="ml-2 rounded-none border border-stone-300 px-3.5 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-100"
+                className="inline-flex items-center gap-2 rounded-lg border border-stone-300 bg-white px-3.5 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-100"
               >
                 Revert to extracted text
               </button>
             )}
-            <div>
-              <label className="text-xs font-medium uppercase tracking-wide text-stone-500">Notes</label>
+          </div>
+        </div>
+      )}
+
+      {/* Content */}
+      <div className="print-area print-body mt-4 rounded-xl border border-stone-200 bg-white p-4 shadow-card sm:p-6">
+        {mode === 'summary' ? (
+          <VideoSummary doc={current} />
+        ) : mode === 'paragraphs' ? (
+          editing ? (
+            <div className="no-print">
               <textarea
-                value={notesDraft}
-                onChange={(e) => setNotesDraft(e.target.value)}
-                rows={3}
-                placeholder="Your notes on this video…"
-                className="mt-1.5 w-full rounded-none border border-stone-300 p-2.5 text-sm outline-none placeholder:text-stone-400 focus:border-stone-900"
+                value={editDraft}
+                onChange={(e) => setEditDraft(e.target.value)}
+                rows={14}
+                className="w-full rounded-lg border border-stone-300 p-3 font-serif text-[1.05rem] leading-relaxed outline-none focus:border-stone-900"
               />
-              <button
-                onClick={saveNotes}
-                disabled={saving || notesDraft === current.notes}
-                className="mt-1.5 rounded-none bg-stone-900 px-3.5 py-1.5 text-sm font-medium text-white hover:bg-stone-700 disabled:opacity-50"
-              >
-                Save notes
-              </button>
+              <div className="mt-2 flex gap-2">
+                <button
+                  onClick={saveEdit}
+                  disabled={saving}
+                  className="ui-primary"
+                >
+                  {saving ? 'Saving…' : 'Save changes'}
+                </button>
+                <button
+                  onClick={() => setEditing(false)}
+                  className="rounded-lg border border-stone-300 px-4 py-2 text-sm font-medium text-stone-700 hover:bg-stone-100"
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
+          ) : (
+            <p className="mx-auto max-w-[68ch] font-serif text-[1.05rem] leading-8 text-stone-800">{renderParaMatches()}</p>
+          )
+        ) : (
+          <ol className="mx-auto flex max-w-4xl flex-col gap-1.5">
+            {current.captions.map((c, i) => {
+              const highlighted = current.highlights.includes(c.start);
+              return (
+                <li
+                  key={i}
+                  ref={cueMatchIdx.includes(i) ? registerMark(cueMatchIdx.indexOf(i)) : undefined}
+                  className={cn('flex gap-3 rounded-lg px-2 py-1.5 text-[0.95rem] leading-7', highlighted && 'bg-yellow-50 ring-1 ring-yellow-200')}
+                >
+                  <button
+                    onClick={() => void openExternal(timestampUrl(current.url, c.start))}
+                    title={`Open video at ${formatMMSS(c.start)}`}
+                    className="w-12 shrink-0 select-none self-start font-mono text-[0.8rem] font-medium text-sky-700 hover:underline"
+                  >
+                    {formatMMSS(c.start)}
+                  </button>
+                  <span className="flex-1 text-stone-800">{renderCueText(c.text, i)}</span>
+                  <span className="no-print flex shrink-0 items-start gap-0.5">
+                    <button
+                      onClick={() => toggleHighlight(c.start)}
+                      title={highlighted ? 'Remove highlight' : 'Highlight this cue'}
+                      className={cn(
+                        'rounded-lg p-1 transition',
+                        highlighted ? 'text-amber-500' : 'text-stone-300 hover:text-amber-500',
+                      )}
+                    >
+                      <Bookmark className={cn('h-4 w-4', highlighted && 'fill-amber-300')} />
+                    </button>
+                    <button
+                      onClick={() => void copyText(timestampUrl(current.url, c.start)).then(() => notify('success', 'Timestamp link copied.'))}
+                      title="Copy link to this timestamp"
+                      className="rounded-lg p-1 text-stone-300 transition hover:text-stone-600"
+                    >
+                      <Link2 className="h-4 w-4" />
+                    </button>
+                  </span>
+                </li>
+              );
+            })}
+          </ol>
+        )}
+        {mode !== 'summary' && current.captions.length === 0 && (
+          <p className="text-sm text-stone-500">No timestamped cues stored for this document.</p>
+        )}
+      </div>
+
+      {/* Annotations */}
+      <div className="no-print mt-4 rounded-xl border border-stone-200 bg-white p-4 shadow-card sm:p-6">
+        <h2 className="flex items-center gap-2 text-sm font-semibold text-stone-900">
+          <Pencil className="h-4 w-4" /> Notes, tags & languages
+        </h2>
+        <div className="mt-4 grid gap-6 md:grid-cols-2">
+          <div>
+            <label className="text-xs font-medium uppercase tracking-wide text-stone-500">Notes</label>
+            <textarea
+              value={notesDraft}
+              onChange={(e) => setNotesDraft(e.target.value)}
+              rows={4}
+              placeholder="Your notes on this video…"
+              className="mt-1.5 w-full rounded-lg border border-stone-300 p-2.5 text-sm outline-none placeholder:text-stone-400 focus:border-stone-900"
+            />
+            <button
+              onClick={saveNotes}
+              disabled={saving || notesDraft === current.notes}
+              className="ui-primary mt-1.5 px-3.5 py-1.5"
+            >
+              Save notes
+            </button>
+          </div>
+          <div className="space-y-6">
             <div>
               <label className="text-xs font-medium uppercase tracking-wide text-stone-500">Tags</label>
               <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
@@ -594,7 +642,7 @@ export default function TranscriptReaderModal({ doc, onClose, onDocUpdated }: Pr
                     }
                   }}
                   placeholder="+ add tag"
-                  className="w-24 rounded-none border border-dashed border-stone-300 px-2 py-1 text-xs outline-none placeholder:text-stone-400 focus:border-stone-900"
+                  className="w-24 rounded-lg border border-dashed border-stone-300 px-2 py-1 text-xs outline-none placeholder:text-stone-400 focus:border-stone-900"
                 />
               </div>
             </div>
@@ -605,7 +653,7 @@ export default function TranscriptReaderModal({ doc, onClose, onDocUpdated }: Pr
                   <button
                     onClick={openTracks}
                     disabled={tracksLoading}
-                    className="inline-flex items-center gap-2 rounded-none border border-stone-300 px-3.5 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-100 disabled:opacity-50"
+                    className="inline-flex items-center gap-2 rounded-lg border border-stone-300 px-3.5 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-100 disabled:opacity-50"
                   >
                     <Languages className="h-4 w-4" />
                     {tracksLoading ? 'Loading languages…' : 'Choose language'}
@@ -637,7 +685,7 @@ export default function TranscriptReaderModal({ doc, onClose, onDocUpdated }: Pr
               </div>
             </div>
           </div>
-        </details>
+        </div>
       </div>
     </div>
   );

@@ -45,6 +45,9 @@ jobs:
           VITE_NEON_AUTH_URL: ${{ vars.VITE_NEON_AUTH_URL }}
           VITE_NEON_JWKS_URL: ${{ vars.VITE_NEON_JWKS_URL }}
           VITE_DATABASE_AUTHENTICATED_URL: ${{ secrets.VITE_DATABASE_AUTHENTICATED_URL }}
+          # Public URL of the summary proxy (see proxy/README.md). The shared
+          # OpenRouter key lives server-side as a Worker secret — never here.
+          VITE_SUMMARY_PROXY_URL: ${{ vars.VITE_SUMMARY_PROXY_URL }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'Nukuzaa ${{ github.ref_name }}'

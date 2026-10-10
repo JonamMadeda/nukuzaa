@@ -100,15 +100,15 @@ export default function AccountPage({ userId, userEmail, signingOut, onSignOut, 
       {onBack && (
         <button
           onClick={onBack}
-          className="inline-flex items-center gap-2 rounded-none border border-stone-300 bg-white px-3.5 py-2 text-sm font-medium text-stone-700 hover:bg-stone-100"
+          className="inline-flex items-center gap-2 rounded-lg border border-stone-300 bg-white px-3.5 py-2 text-sm font-medium text-stone-700 hover:bg-stone-100"
         >
           <ArrowLeft className="h-4 w-4" /> Back
         </button>
       )}
 
-      <div className="mt-5 rounded-none border border-stone-200 bg-white p-8 shadow-card">
+      <div className="mt-5 rounded-lg border border-stone-200 bg-white p-8 shadow-card">
         <div className="flex flex-col items-center text-center">
-          <span className="flex h-12 w-12 items-center justify-center rounded-none bg-stone-900 text-white">
+          <span className="flex h-12 w-12 items-center justify-center rounded-lg bg-stone-900 text-white">
             <UserRound className="h-6 w-6" />
           </span>
           <h1 className="mt-4 text-2xl font-bold tracking-tight">Account</h1>
@@ -116,13 +116,13 @@ export default function AccountPage({ userId, userEmail, signingOut, onSignOut, 
         </div>
 
         <dl className="mt-6 space-y-3 text-sm">
-          <div className="flex items-center justify-between gap-4 rounded-none bg-stone-100 px-4 py-2.5">
+          <div className="flex items-center justify-between gap-4 rounded-lg bg-stone-100 px-4 py-2.5">
             <dt className="font-medium text-stone-500">Email</dt>
             <dd className="truncate font-medium text-stone-900" title={userEmail ?? ''}>
               {userEmail ?? '—'}
             </dd>
           </div>
-          <div className="flex items-center justify-between gap-4 rounded-none bg-stone-100 px-4 py-2.5">
+          <div className="flex items-center justify-between gap-4 rounded-lg bg-stone-100 px-4 py-2.5">
             <dt className="font-medium text-stone-500">User ID</dt>
             <dd className="truncate font-mono text-xs text-stone-700" title={userId}>
               {userId}
@@ -140,8 +140,8 @@ export default function AccountPage({ userId, userEmail, signingOut, onSignOut, 
               {stats.docs} {stats.docs === 1 ? 'document' : 'documents'} · {stats.folders}{' '}
               {stats.folders === 1 ? 'folder' : 'folders'} · {formatBytes(stats.bytes)} of {formatBytes(QUOTA_BYTES)}
             </p>
-            <div className="mt-2 h-2 overflow-hidden rounded-none bg-stone-100">
-              <div className="h-full rounded-none bg-stone-900 transition-all" style={{ width: `${pct}%` }} />
+            <div className="mt-2 h-2 overflow-hidden rounded-lg bg-stone-100">
+              <div className="h-full rounded-lg bg-stone-900 transition-all" style={{ width: `${pct}%` }} />
             </div>
           </div>
         )}
@@ -156,7 +156,7 @@ export default function AccountPage({ userId, userEmail, signingOut, onSignOut, 
               <button
                 onClick={revokeOthers}
                 disabled={revoking}
-                className="rounded-none border border-stone-300 px-3 py-1.5 text-xs font-medium text-stone-700 hover:bg-stone-100 disabled:opacity-50"
+                className="rounded-lg border border-stone-300 px-3 py-1.5 text-xs font-medium text-stone-700 hover:bg-stone-100 disabled:opacity-50"
               >
                 {revoking ? 'Working…' : 'Sign out other devices'}
               </button>
@@ -200,7 +200,7 @@ export default function AccountPage({ userId, userEmail, signingOut, onSignOut, 
         <button
           onClick={onSignOut}
           disabled={signingOut}
-          className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-none border border-stone-300 px-5 py-2.5 text-sm font-medium text-stone-700 hover:bg-stone-100 disabled:opacity-50"
+          className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-stone-300 px-5 py-2.5 text-sm font-medium text-stone-700 hover:bg-stone-100 disabled:opacity-50"
         >
           {signingOut ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogOut className="h-4 w-4" />}
           {signingOut ? 'Signing out…' : 'Sign out'}

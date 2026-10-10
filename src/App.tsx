@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Header from './components/Header';
 import Dashboard, { type FolderViewMode } from './components/Dashboard';
 import Workspace from './components/Workspace';
-import TranscriptReaderModal from './components/TranscriptReaderModal';
+import ReaderPage from './components/ReaderPage';
 import CreateFolderModal from './components/CreateFolderModal';
 import AccountPage from './components/AccountPage';
 import ShortcutsModal from './components/ShortcutsModal';
@@ -21,7 +21,7 @@ import {
 import type { DbStatus, Folder, FolderAccent, FolderSort, TranscriptDoc } from './lib/types';
 import { friendlyDbError } from './lib/utils';
 
-type View = { name: 'dashboard' } | { name: 'workspace'; folder: Folder } | { name: 'account' };
+type View = { name: 'dashboard' } | { name: 'workspace'; folder: Folder } | { name: 'reader' } | { name: 'account' };
 
 /** Initial try + scheduled re-tries (4s, 8s, 12s, 16s). Covers Neon cold starts. */
 const MAX_ATTEMPTS = 5;
@@ -45,6 +45,9 @@ function Shell() {
   const [creating, setCreating] = useState(false);
   const [editingFolder, setEditingFolder] = useState<Folder | null>(null);
   const [activeDoc, setActiveDoc] = useState<TranscriptDoc | null>(null);
+  const [readerOrigin, setReaderOrigin] = useState<Folder | null>(null);
+  const [recentDocIds, setRecentDocIds] = useState<string[]>([]);
+  const [docRevision, setDocRevision] = useState(0);
   const [wsRefresh, setWsRefresh] = useState(0);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [appVersion, setAppVersion] = useState<string | null>(null);
@@ -52,6 +55,41 @@ function Shell() {
   const { data: session, isPending: sessionPending, refetch: refetchSession } = authClient.useSession();
   const userId = session?.user?.id ?? null;
   const userEmail = session?.user?.email ?? null;
+
+  useEffect(() => {
+    if (!userId) {
+      setRecentDocIds([]);
+      return;
+    }
+    try {
+      const stored = JSON.parse(localStorage.getItem(`nukuzaa:recent:${userId}`) ?? '[]');
+      setRecentDocIds(Array.isArray(stored) ? stored.filter((id): id is string => typeof id === 'string').slice(0, 8) : []);
+    } catch {
+      setRecentDocIds([]);
+    }
+  }, [userId]);
+
+  const openDoc = (doc: TranscriptDoc, origin: Folder | null) => {
+    setActiveDoc(doc);
+    setReaderOrigin(origin);
+    setView({ name: 'reader' });
+    setRecentDocIds((previous) => {
+      const next = [doc.id, ...previous.filter((id) => id !== doc.id)].slice(0, 8);
+      if (userId) {
+        try {
+          localStorage.setItem(`nukuzaa:recent:${userId}`, JSON.stringify(next));
+        } catch {
+          /* Browser storage can be unavailable; reading still works. */
+        }
+      }
+      return next;
+    });
+  };
+
+  const updateActiveDoc = (doc: TranscriptDoc) => {
+    setActiveDoc(doc);
+    setDocRevision((revision) => revision + 1);
+  };
 
   useEffect(() => {
     (async () => {
@@ -142,6 +180,7 @@ function Shell() {
       setFolders([]);
       setView({ name: 'dashboard' });
       setActiveDoc(null);
+      setReaderOrigin(null);
       setCreateOpen(false);
       notify('info', 'Session expired — please sign in again.');
       try {
@@ -169,6 +208,20 @@ function Shell() {
     }
   }, [folderSort]);
 
+  // Leaving the reader: back to the origin folder, or the dashboard.
+  // Bumps wsRefresh so the workspace list reflects any edits on return.
+  const closeReader = () => {
+    const origin = readerOrigin;
+    setReaderOrigin(null);
+    setWsRefresh((n) => n + 1);
+    if (origin) {
+      const fresh = folders.find((f) => f.id === origin.id) ?? origin;
+      setView({ name: 'workspace', folder: fresh });
+    } else {
+      setView({ name: 'dashboard' });
+    }
+  };
+
   // Keyboard shortcuts: / focus search, n new folder, ? cheatsheet, Esc back out.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -177,10 +230,8 @@ function Shell() {
         !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
       if (e.key === 'Escape') {
         if (shortcutsOpen) setShortcutsOpen(false);
-        else if (activeDoc) {
-          setActiveDoc(null);
-          setWsRefresh((n) => n + 1);
-        } else if (createOpen || editingFolder != null) {
+        else if (view.name === 'reader') closeReader();
+        else if (createOpen || editingFolder != null) {
           setCreateOpen(false);
           setEditingFolder(null);
         } else if (view.name !== 'dashboard') setView({ name: 'dashboard' });
@@ -189,7 +240,12 @@ function Shell() {
       if (typing || e.ctrlKey || e.metaKey || e.altKey || !userId) return;
       if (e.key === '/') {
         e.preventDefault();
-        document.getElementById(view.name === 'workspace' ? 'workspace-url' : 'dashboard-search')?.focus();
+        const el = document.getElementById(
+          view.name === 'workspace' ? 'workspace-url' : view.name === 'reader' ? 'reader-search' : 'dashboard-search',
+        );
+        // The reader hides its search box in Summary mode — only focus a
+        // visible input, otherwise the shortcut silently does nothing.
+        if (el instanceof HTMLElement && el.offsetParent !== null) el.focus();
       } else if (e.key === 'n' && view.name === 'dashboard') {
         setCreateOpen(true);
       } else if (e.key === '?') {
@@ -198,7 +254,7 @@ function Shell() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [activeDoc, createOpen, editingFolder, shortcutsOpen, view.name, userId]);
+  }, [closeReader, createOpen, editingFolder, shortcutsOpen, view.name, userId]);
 
   const handleCreate = async (title: string, accent: FolderAccent) => {
     setCreating(true);
@@ -284,6 +340,33 @@ function Shell() {
     return <AccountPage userId={null} userEmail={null} signingOut={false} onSignOut={() => {}} />;
   }
 
+  const dashboard = (
+    <Dashboard
+      userId={userId}
+      recentDocIds={recentDocIds}
+      docRevision={docRevision}
+      folders={folders}
+      loading={loadingFolders}
+      dbError={dbError}
+      dbHost={dbHost}
+      autoRetrying={autoRetrying}
+      attempt={attempt}
+      search={search}
+      onSearch={setSearch}
+      mode={mode}
+      onMode={setMode}
+      folderSort={folderSort}
+      onFolderSort={setFolderSort}
+      onOpenCreate={() => setCreateOpen(true)}
+      onOpenFolder={(f) => setView({ name: 'workspace', folder: f })}
+      onOpenDoc={(d) => openDoc(d, folders.find((f) => f.id === d.folderId) ?? null)}
+      onEditFolder={setEditingFolder}
+      onDeleteFolder={handleDeleteFolder}
+      onRetry={() => void loadFolders()}
+      onFoldersChanged={() => void loadFolders()}
+    />
+  );
+
   return (
     <div className="flex min-h-full flex-col">
       <Header
@@ -303,40 +386,29 @@ function Shell() {
             onBack={() => setView({ name: 'dashboard' })}
           />
         ) : view.name === 'dashboard' ? (
-          <Dashboard
-            folders={folders}
-            loading={loadingFolders}
-            dbError={dbError}
-            dbHost={dbHost}
-            autoRetrying={autoRetrying}
-            attempt={attempt}
-            search={search}
-            onSearch={setSearch}
-            mode={mode}
-            onMode={setMode}
-            folderSort={folderSort}
-            onFolderSort={setFolderSort}
-            onOpenCreate={() => setCreateOpen(true)}
-            onOpenFolder={(f) => setView({ name: 'workspace', folder: f })}
-            onOpenDoc={setActiveDoc}
-            onEditFolder={setEditingFolder}
-            onDeleteFolder={handleDeleteFolder}
-            onRetry={() => void loadFolders()}
-            onFoldersChanged={() => void loadFolders()}
-          />
-        ) : (
+          dashboard
+        ) : view.name === 'workspace' ? (
           <Workspace
             folder={view.folder}
             allFolders={folders}
             onBack={() => setView({ name: 'dashboard' })}
             onDocsChanged={refreshCounts}
-            onOpenDoc={setActiveDoc}
+            onOpenDoc={(d) => openDoc(d, view.folder)}
             refreshKey={wsRefresh}
           />
+        ) : view.name === 'reader' && activeDoc ? (
+          <ReaderPage
+            doc={activeDoc}
+            originFolder={readerOrigin}
+            onBack={closeReader}
+            onDocUpdated={updateActiveDoc}
+          />
+        ) : (
+          dashboard
         )}
       </main>
 
-      <footer className="mt-auto flex items-center justify-center gap-2 border-t border-stone-200 py-2.5 text-center text-xs text-stone-400">
+      <footer className="mt-auto flex flex-wrap items-center justify-center gap-x-2 gap-y-1 border-t border-stone-200 px-4 py-3 text-center text-[11px] text-stone-500 sm:text-xs">
         <span>Nukuzaa{appVersion ? ` v${appVersion}` : ''} · transcripts on your device · private to your account</span>
         <span aria-hidden>·</span>
         <button
@@ -367,14 +439,6 @@ function Shell() {
         }}
         onCreate={handleCreate}
         onSaveEdit={handleSaveFolderEdit}
-      />
-      <TranscriptReaderModal
-        doc={activeDoc}
-        onClose={() => {
-          setActiveDoc(null);
-          setWsRefresh((n) => n + 1);
-        }}
-        onDocUpdated={setActiveDoc}
       />
       <ShortcutsModal open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
       <UpdateManager />

@@ -123,8 +123,21 @@ async function verifyPayload(token: string): Promise<JWTPayload> {
  * session cookie, so no stored secrets are involved.
  */
 export async function getVerifiedClaimsJson(): Promise<string> {
+  return (await getCachedToken()).claimsJson;
+}
+
+/**
+ * Raw short-lived JWT for authenticated calls to our own backend services
+ * (e.g. the summary proxy, which verifies it against the same JWKS).
+ * Same cache/session behavior as getVerifiedClaimsJson.
+ */
+export async function getAuthToken(): Promise<string> {
+  return (await getCachedToken()).token;
+}
+
+async function getCachedToken(): Promise<CachedToken> {
   const now = Math.floor(Date.now() / 1000);
-  if (cached && cached.exp - 60 > now) return cached.claimsJson;
+  if (cached && cached.exp - 60 > now) return cached;
   const { data, error } = await authClient.token();
   if (error || !data?.token) {
     cached = null;
@@ -136,5 +149,5 @@ export async function getVerifiedClaimsJson(): Promise<string> {
     throw new Error('Auth token has no subject — please sign in again.');
   }
   cached = { token: data.token, claimsJson: JSON.stringify(payload), exp: decodeExp(data.token) };
-  return cached.claimsJson;
+  return cached;
 }

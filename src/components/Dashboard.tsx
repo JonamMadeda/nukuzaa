@@ -2,11 +2,14 @@ import { useEffect, useState } from 'react';
 import {
   Archive,
   ArchiveRestore,
+  CalendarDays,
   Check,
   CheckSquare,
+  Clock3,
   Copy,
   FileText,
   FolderOpen,
+  Bookmark,
   LayoutGrid,
   Link2,
   List,
@@ -29,7 +32,9 @@ import {
   findDuplicateVideo,
   getStorageStats,
   listFavoriteDocs,
+  listHighlightedDocs,
   listFoldersWithCounts,
+  listRecentDocs,
   listTranscripts,
   moveTranscript,
   searchTranscripts,
@@ -44,6 +49,9 @@ import { useToast } from '../hooks/useToast';
 export type FolderViewMode = 'grid' | 'list';
 
 interface Props {
+  userId: string;
+  recentDocIds: string[];
+  docRevision: number;
   folders: Folder[];
   loading: boolean;
   dbError: string | null;
@@ -98,13 +106,19 @@ export default function Dashboard(p: Props) {
     return () => window.clearTimeout(t);
   }, [p.search]);
 
-  // Favorites shelf + storage glance.
+  // Revisit shelves + storage glance.
   const [favDocs, setFavDocs] = useState<TranscriptDoc[]>([]);
+  const [highlightDocs, setHighlightDocs] = useState<TranscriptDoc[]>([]);
+  const [recentDocs, setRecentDocs] = useState<TranscriptDoc[]>([]);
   const [stats, setStats] = useState<StorageStats | null>(null);
   useEffect(() => {
     listFavoriteDocs(8).then(setFavDocs).catch(() => setFavDocs([]));
+    listHighlightedDocs(8).then(setHighlightDocs).catch(() => setHighlightDocs([]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [p.folders]);
+  }, [p.folders, p.docRevision]);
+  useEffect(() => {
+    listRecentDocs(p.recentDocIds).then(setRecentDocs).catch(() => setRecentDocs([]));
+  }, [p.recentDocIds, p.userId]);
   useEffect(() => {
     getStorageStats().then(setStats).catch(() => setStats(null));
   }, []);
@@ -269,17 +283,18 @@ export default function Dashboard(p: Props) {
   const mergeCandidates = p.folders.filter((f) => !selected.has(f.id));
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+    <div className="mx-auto max-w-6xl px-4 py-7 sm:px-6 sm:py-9">
       {/* Row 1: page identity + creation actions */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="mr-auto leading-tight">
-          <h1 className="text-xl font-bold tracking-tight">Your folders</h1>
-          <p className="text-xs text-stone-500">
-            {p.folders.length} {p.folders.length === 1 ? 'folder' : 'folders'} · {totalDocs}{' '}
-            {totalDocs === 1 ? 'document' : 'documents'}
-            {stats ? ` · ${formatBytes(stats.bytes)} stored` : ''} · {collections}{' '}
-            {collections === 1 ? 'collection' : 'collections'}
-          </p>
+          <h1 className="text-2xl font-bold tracking-tight text-stone-950 sm:text-[1.75rem]">Your library</h1>
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-stone-500">
+            <span>{p.folders.length} {p.folders.length === 1 ? 'folder' : 'folders'}</span>
+            <span aria-hidden className="text-stone-300">·</span>
+            <span>{totalDocs} {totalDocs === 1 ? 'transcript' : 'transcripts'}</span>
+            {stats && <><span aria-hidden className="text-stone-300">·</span><span>{formatBytes(stats.bytes)} used</span></>}
+            {collections > 0 && <><span aria-hidden className="text-stone-300">·</span><span>{collections} active {collections === 1 ? 'folder' : 'folders'}</span></>}
+          </div>
         </div>
         {!isEmpty && (
           <button
@@ -288,7 +303,7 @@ export default function Dashboard(p: Props) {
             aria-pressed={quickOpen}
             disabled={showArchived}
             className={cn(
-              'inline-flex items-center gap-1.5 rounded-none border px-3.5 py-2.5 text-sm font-medium transition disabled:opacity-50',
+              'inline-flex items-center gap-1.5 rounded-lg border px-3.5 py-2.5 text-sm font-medium transition disabled:opacity-50',
               quickOpen
                 ? 'border-stone-900 bg-stone-900 text-white'
                 : 'border-stone-300 bg-white text-stone-500 hover:text-stone-800',
@@ -300,7 +315,7 @@ export default function Dashboard(p: Props) {
         )}
         <button
           onClick={p.onOpenCreate}
-          className="inline-flex items-center gap-1.5 rounded-none bg-stone-900 px-4 py-2.5 text-sm font-medium text-white shadow-card hover:bg-stone-700"
+          className="ui-primary transition-transform hover:-translate-y-px"
         >
           <Plus className="h-4 w-4" /> New folder
         </button>
@@ -308,7 +323,7 @@ export default function Dashboard(p: Props) {
 
       {/* Row 2: find + organize */}
       {!isEmpty && (
-        <div className="mt-4 flex flex-wrap items-center gap-3">
+        <div className="mt-5 flex flex-wrap items-center gap-2.5 rounded-xl border border-stone-200 bg-white/70 p-2 shadow-sm sm:gap-3 sm:p-2.5">
           <div className="relative min-w-52 flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" />
             <input
@@ -317,12 +332,22 @@ export default function Dashboard(p: Props) {
               onChange={(e) => p.onSearch(e.target.value)}
               placeholder="Search folders and transcripts…"
               disabled={showArchived}
-              className="w-full rounded-none border border-stone-300 bg-white py-2.5 pl-9 pr-3 text-sm outline-none placeholder:text-stone-400 focus:border-stone-900 focus:ring-2 focus:ring-stone-200 disabled:bg-stone-50"
+              className="w-full rounded-lg border border-stone-300 bg-white py-2.5 pl-9 pr-10 text-sm outline-none placeholder:text-stone-400 focus:border-yellow-600 focus:ring-2 focus:ring-yellow-100 disabled:bg-stone-50"
             />
+            {p.search && (
+              <button
+                type="button"
+                onClick={() => p.onSearch('')}
+                aria-label="Clear search"
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-stone-400 hover:bg-stone-100 hover:text-stone-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-700"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
           </div>
           <div
             title="View options"
-            className="flex items-center gap-1 rounded-none border border-stone-300 bg-white p-1"
+            className="flex items-center gap-1 rounded-lg border border-stone-300 bg-white p-1"
           >
             <ToggleBtn active={p.mode === 'grid'} onClick={() => p.onMode('grid')} label="Grid view">
               <LayoutGrid className="h-4 w-4" />
@@ -336,7 +361,7 @@ export default function Dashboard(p: Props) {
               onChange={(e) => p.onFolderSort(e.target.value as FolderSort)}
               title="Sort folders"
               disabled={showArchived}
-              className="rounded-none border-0 bg-transparent px-2 py-2 text-sm text-stone-700 outline-none disabled:opacity-50"
+              className="rounded-lg border-0 bg-transparent px-2 py-2 text-sm text-stone-700 outline-none disabled:opacity-50"
             >
               <option value="recent">Recent</option>
               <option value="title">Title A–Z</option>
@@ -349,7 +374,7 @@ export default function Dashboard(p: Props) {
             aria-pressed={selectMode}
             disabled={showArchived}
             className={cn(
-              'inline-flex items-center gap-1.5 rounded-none border px-3.5 py-2.5 text-sm font-medium transition disabled:opacity-50',
+              'inline-flex items-center gap-1.5 rounded-lg border px-3.5 py-2.5 text-sm font-medium transition disabled:opacity-50',
               selectMode
                 ? 'border-stone-900 bg-stone-900 text-white'
                 : 'border-stone-300 bg-white text-stone-500 hover:text-stone-800',
@@ -360,7 +385,7 @@ export default function Dashboard(p: Props) {
           </button>
           <button
             onClick={openArchived}
-            className="ml-auto text-xs font-medium text-stone-500 hover:text-stone-800 hover:underline"
+            className="ml-auto rounded-lg px-3 py-2 text-xs font-medium text-stone-600 hover:bg-stone-100 hover:text-stone-950"
           >
             {showArchived ? 'Hide archived' : 'Archived'}
           </button>
@@ -374,7 +399,7 @@ export default function Dashboard(p: Props) {
 
       {/* Quick-add bar (expandable) */}
       {quickOpen && !p.loading && !p.dbError && p.folders.length > 0 && (
-        <div className="mt-5 flex flex-col gap-3 rounded-none border border-stone-200 bg-white p-3 shadow-card sm:flex-row">
+        <div className="mt-5 flex flex-col gap-3 rounded-lg border border-stone-200 bg-white p-3 shadow-card sm:flex-row">
           <div className="relative flex-1">
             <Link2 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" />
             <input
@@ -385,14 +410,14 @@ export default function Dashboard(p: Props) {
               }}
               placeholder="Quick add — paste a YouTube URL…"
               disabled={quickBusy}
-              className="w-full rounded-none border border-stone-300 py-2 pl-9 pr-3 text-sm outline-none placeholder:text-stone-400 focus:border-stone-900 disabled:bg-stone-50"
+              className="w-full rounded-lg border border-stone-300 py-2 pl-9 pr-3 text-sm outline-none placeholder:text-stone-400 focus:border-stone-900 disabled:bg-stone-50"
             />
           </div>
           <select
             value={quickTarget}
             onChange={(e) => setQuickFolder(e.target.value)}
             title="Target folder"
-            className="max-w-44 truncate rounded-none border border-stone-300 bg-white px-2 py-2 text-sm text-stone-700 outline-none focus:border-stone-900"
+            className="max-w-44 truncate rounded-lg border border-stone-300 bg-white px-2 py-2 text-sm text-stone-700 outline-none focus:border-stone-900"
           >
             {p.folders.map((f) => (
               <option key={f.id} value={f.id}>
@@ -403,7 +428,7 @@ export default function Dashboard(p: Props) {
           <button
             onClick={() => void quickAdd()}
             disabled={!quickUrl.trim() || quickBusy || !quickTarget}
-            className="inline-flex items-center justify-center gap-2 rounded-none bg-stone-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-stone-700 disabled:opacity-50"
+            className="ui-primary"
           >
             {quickBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
             {quickBusy ? 'Saving…' : 'Add'}
@@ -416,6 +441,9 @@ export default function Dashboard(p: Props) {
         <div className="mt-4">
           <p className="text-xs font-semibold text-stone-600">
             Documents {docSearching ? '— searching…' : docResults.length > 0 ? `(${docResults.length})` : '— no matches'}
+            {q.length >= 2 && !docSearching && docResults.length > 0 && (
+              <span className="ml-2 font-normal text-stone-400">Matches in titles, transcript text, or tags</span>
+            )}
           </p>
           {docResults.length > 0 && (
             <div className="mt-3 flex flex-col gap-3">
@@ -423,12 +451,12 @@ export default function Dashboard(p: Props) {
                 <button
                   key={d.id}
                   onClick={() => p.onOpenDoc(d)}
-                  className="group flex items-center gap-4 rounded-none border border-stone-200 bg-white p-3.5 text-left shadow-card transition hover:border-stone-300 hover:shadow"
+              className="group flex items-center gap-4 rounded-xl border border-stone-200 bg-white p-3.5 text-left shadow-card transition hover:-translate-y-0.5 hover:border-stone-300 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-700"
                 >
                   {d.thumbnail ? (
-                    <img src={d.thumbnail} alt="" loading="lazy" className="h-10 w-16 shrink-0 rounded-none object-cover" />
+                    <img src={d.thumbnail} alt="" loading="lazy" className="h-10 w-16 shrink-0 rounded-lg object-cover" />
                   ) : (
-                    <span className="flex h-10 w-16 shrink-0 items-center justify-center rounded-none bg-stone-100">
+                    <span className="flex h-10 w-16 shrink-0 items-center justify-center rounded-lg bg-stone-100">
                       <FileText className="h-4 w-4 text-stone-400" />
                     </span>
                   )}
@@ -456,37 +484,25 @@ export default function Dashboard(p: Props) {
         </div>
       )}
 
-      {/* Favorites shelf */}
+      {showShelves && recentDocs.length > 0 && (
+        <DocumentShelf title="Recently opened" icon={<Clock3 className="h-3.5 w-3.5" />} docs={recentDocs} onOpen={p.onOpenDoc} />
+      )}
       {showShelves && favDocs.length > 0 && (
-        <Shelf title="Favorites" icon={<Star className="h-3.5 w-3.5" />}>
-          {favDocs.map((d) => (
-            <button
-              key={d.id}
-              onClick={() => p.onOpenDoc(d)}
-              title={d.title}
-              className="group flex w-64 shrink-0 snap-start items-center gap-3 border border-stone-200 bg-white p-3 text-left transition hover:border-stone-400"
-            >
-              {d.thumbnail ? (
-                <img src={d.thumbnail} alt="" loading="lazy" className="h-14 w-24 shrink-0 rounded-none object-cover" />
-              ) : (
-                <span className="flex h-14 w-24 shrink-0 items-center justify-center rounded-none bg-stone-100">
-                  <Star className="h-4 w-4 text-amber-400" />
-                </span>
-              )}
-              <span className="min-w-0">
-                <span className="line-clamp-2 block text-xs font-semibold leading-snug">{d.title}</span>
-                <span className="mt-0.5 block truncate text-[11px] text-stone-500">
-                  {d.folderTitle ?? ''}
-                </span>
-              </span>
-            </button>
-          ))}
-        </Shelf>
+        <DocumentShelf title="Favorites" icon={<Star className="h-3.5 w-3.5" />} docs={favDocs} onOpen={p.onOpenDoc} />
+      )}
+      {showShelves && highlightDocs.length > 0 && (
+        <DocumentShelf
+          title="Saved highlights"
+          icon={<Bookmark className="h-3.5 w-3.5" />}
+          docs={highlightDocs}
+          onOpen={p.onOpenDoc}
+          detail={(doc) => `${doc.highlights.length} ${doc.highlights.length === 1 ? 'highlight' : 'highlights'} · ${doc.folderTitle ?? 'Folder'}`}
+        />
       )}
 
       {/* Bulk action bar */}
       {selectMode && (
-        <div className="sticky bottom-4 z-30 mt-6 flex flex-wrap items-center gap-3 rounded-none border border-stone-300 bg-stone-100 px-4 py-2.5 text-sm text-stone-800 shadow-lg">
+        <div className="sticky bottom-4 z-30 mt-6 flex flex-wrap items-center gap-3 rounded-lg border border-stone-300 bg-stone-100 px-4 py-2.5 text-sm text-stone-800 shadow-lg">
           <span className="font-medium">
             {selected.size} selected
           </span>
@@ -495,7 +511,7 @@ export default function Dashboard(p: Props) {
               value={mergeTarget}
               onChange={(e) => setMergeTarget(e.target.value)}
               title="Merge target folder"
-              className="rounded-none border border-stone-300 bg-white px-2 py-1.5 text-xs text-stone-800 outline-none"
+              className="rounded-lg border border-stone-300 bg-white px-2 py-1.5 text-xs text-stone-800 outline-none"
             >
               <option value="">Merge into…</option>
               {mergeCandidates.map((f) => (
@@ -507,28 +523,28 @@ export default function Dashboard(p: Props) {
             <button
               onClick={bulkMerge}
               disabled={bulkBusy || selected.size === 0 || !mergeTarget}
-              className="rounded-none bg-stone-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-stone-700 disabled:opacity-50"
+              className="ui-primary px-3 py-1.5 text-xs"
             >
               Merge
             </button>
             <button
               onClick={bulkArchive}
               disabled={bulkBusy || selected.size === 0}
-              className="rounded-none border border-stone-300 bg-white px-3 py-1.5 text-xs font-medium text-stone-700 hover:bg-stone-200 disabled:opacity-50"
+              className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-xs font-medium text-stone-700 hover:bg-stone-200 disabled:opacity-50"
             >
               Archive
             </button>
             <button
               onClick={bulkDelete}
               disabled={bulkBusy || selected.size === 0}
-              className="rounded-none bg-red-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-600 disabled:opacity-50"
+              className="rounded-lg bg-red-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-600 disabled:opacity-50"
             >
               Delete
             </button>
             <button
               onClick={exitSelect}
               aria-label="Exit select mode"
-              className="rounded-none p-1.5 text-stone-500 hover:text-stone-900"
+              className="rounded-lg p-1.5 text-stone-500 hover:text-stone-900"
             >
               <X className="h-4 w-4" />
             </button>
@@ -540,7 +556,7 @@ export default function Dashboard(p: Props) {
       {p.loading ? (
         <div className={cn('mt-6', p.mode === 'grid' ? 'grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3' : 'flex flex-col gap-3')}>
           {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="rounded-none border border-stone-200 bg-white p-4">
+            <div key={i} className="rounded-lg border border-stone-200 bg-white p-4">
               <div className="h-4 w-2/3 animate-pulse rounded bg-stone-200" />
               <div className="mt-2 h-3 w-1/3 animate-pulse rounded bg-stone-100" />
             </div>
@@ -581,13 +597,13 @@ export default function Dashboard(p: Props) {
                   <div className="mt-2 flex gap-1.5">
                     <button
                       onClick={() => restore(f)}
-                      className="inline-flex items-center gap-1 rounded-none border border-stone-300 px-2.5 py-1.5 text-xs font-medium text-stone-700 hover:bg-stone-100"
+                      className="inline-flex items-center gap-1 rounded-lg border border-stone-300 px-2.5 py-1.5 text-xs font-medium text-stone-700 hover:bg-stone-100"
                     >
                       <ArchiveRestore className="h-3.5 w-3.5" /> Restore
                     </button>
                     <button
                       onClick={() => p.onDeleteFolder(f)}
-                      className="inline-flex items-center gap-1 rounded-none border border-red-200 px-2.5 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50"
+                      className="inline-flex items-center gap-1 rounded-lg border border-red-200 px-2.5 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50"
                     >
                       <Trash2 className="h-3.5 w-3.5" /> Delete
                     </button>
@@ -601,12 +617,15 @@ export default function Dashboard(p: Props) {
         p.folders.length === 0 ? (
           <Onboarding onCreate={p.onOpenCreate} />
         ) : (
-          <div className="mt-4 rounded-none border border-dashed border-stone-300 bg-white p-8 text-center">
+          <div className="mt-4 rounded-lg border border-dashed border-stone-300 bg-white p-8 text-center">
             <FolderOpen className="mx-auto h-8 w-8 text-stone-300" />
             <h2 className="mt-3 font-semibold">No folders match your search</h2>
             <p className="mx-auto mt-1 max-w-sm text-sm text-stone-500">
               Nothing named “{p.search.trim()}”. Try a different search.
             </p>
+            <button onClick={() => p.onSearch('')} className="mt-4 rounded-lg px-3 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-600">
+              Clear search
+            </button>
           </div>
         )
       ) : (
@@ -693,13 +712,53 @@ export default function Dashboard(p: Props) {
   );
 }
 
-function Shelf({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
+function DocumentShelf({
+  title,
+  icon,
+  docs,
+  onOpen,
+  detail,
+}: {
+  title: string;
+  icon: React.ReactNode;
+  docs: TranscriptDoc[];
+  onOpen: (doc: TranscriptDoc) => void;
+  detail?: (doc: TranscriptDoc) => string;
+}) {
   return (
     <div className="mt-7">
       <p className="flex items-center gap-1.5 text-xs font-semibold text-stone-600">
         {icon} {title}
       </p>
-      <div className="nice-scroll mt-3 flex snap-x gap-3 overflow-x-auto scroll-px-4 pb-1">{children}</div>
+      <div className="nice-scroll mt-3 flex snap-x gap-3 overflow-x-auto scroll-px-4 pb-1">
+        {docs.map((doc) => (
+          <button
+            key={doc.id}
+            onClick={() => onOpen(doc)}
+            title={doc.title}
+          className="group flex w-60 shrink-0 snap-start flex-col overflow-hidden rounded-xl border border-stone-200 bg-white text-left shadow-sm transition hover:-translate-y-0.5 hover:border-stone-300 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-700"
+          >
+            {doc.thumbnail ? (
+              <img src={doc.thumbnail} alt="" loading="lazy" className="aspect-video w-full shrink-0 bg-stone-100 object-cover" />
+            ) : (
+              <span className="flex aspect-video w-full shrink-0 items-center justify-center bg-stone-100 text-stone-300">
+                {icon}
+              </span>
+            )}
+            <span className="flex min-w-0 flex-1 flex-col p-3">
+              <span className="line-clamp-2 min-h-[2.75em] text-[13px] font-semibold leading-snug text-stone-900">
+                {doc.title}
+              </span>
+              <span className="mt-auto flex items-center justify-between gap-2 pt-2 text-[11px] text-stone-500">
+                <span className="min-w-0 flex-1 truncate">
+                  {detail ? detail(doc) : doc.folderTitle ?? ''}
+                </span>
+                <span className="shrink-0 tabular-nums text-stone-400">{formatDate(doc.createdAt)}</span>
+              </span>
+            </span>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -719,7 +778,7 @@ function snippet(d: TranscriptDoc, q: string): string {
 
 function Onboarding({ onCreate }: { onCreate: () => void }) {
   return (
-    <div className="mt-4 rounded-none border border-stone-200 bg-white p-8 shadow-card">
+    <div className="mt-4 rounded-lg border border-stone-200 bg-white p-8 shadow-card">
       <h2 className="text-lg font-bold tracking-tight">Save your first transcript</h2>
       <ol className="mt-4 flex flex-col gap-3">
         {[
@@ -740,7 +799,7 @@ function Onboarding({ onCreate }: { onCreate: () => void }) {
       </ol>
       <button
         onClick={onCreate}
-        className="mt-5 inline-flex items-center gap-2 rounded-none bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-700"
+        className="ui-primary mt-5"
       >
         <Plus className="h-4 w-4" /> Create your first folder
       </button>
@@ -760,22 +819,23 @@ interface CardActions {
 function ActionCluster(a: CardActions) {
   // Hover-reveal on precise pointers; always visible on touch screens.
   const btn =
-    'rounded-none p-1.5 text-stone-300 opacity-0 transition group-hover:opacity-100 hover:bg-stone-100 hover:text-stone-700 [@media(hover:none)]:opacity-100';
+    'rounded-lg p-2 text-stone-500 transition hover:bg-stone-100 hover:text-stone-900 focus-visible:opacity-100 sm:opacity-0 sm:group-hover:opacity-100';
   return (
     <span className="flex shrink-0 items-center" onClick={(e) => e.stopPropagation()}>
-      <button onClick={a.onPin} title={a.folder.pinned ? 'Unpin folder' : 'Pin folder'} className={cn(btn, a.folder.pinned && 'text-stone-900 opacity-100')}>
+      <button onClick={a.onPin} title={a.folder.pinned ? 'Unpin folder' : 'Pin folder'} aria-label={a.folder.pinned ? 'Unpin folder' : 'Pin folder'} className={cn(btn, a.folder.pinned && 'text-stone-900 sm:opacity-100')}>
         {a.folder.pinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
       </button>
-      <button onClick={a.onEdit} title="Rename / recolor" className={btn}>
+      <button onClick={a.onEdit} title="Rename / recolor" aria-label="Rename or recolor folder" className={btn}>
         <Pencil className="h-4 w-4" />
       </button>
-      <button onClick={a.onArchive} title="Archive folder" className={btn}>
+      <button onClick={a.onArchive} title="Archive folder" aria-label="Archive folder" className={btn}>
         <Archive className="h-4 w-4" />
       </button>
       <button
         onClick={a.onDelete}
         title="Delete folder"
-        className="rounded-none p-1.5 text-stone-300 opacity-0 transition hover:bg-red-50 hover:text-red-600 group-hover:opacity-100 [@media(hover:none)]:opacity-100"
+        aria-label="Delete folder"
+        className="rounded-lg p-2 text-stone-500 transition hover:bg-red-50 hover:text-red-600 focus-visible:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
       >
         <Trash2 className="h-4 w-4" />
       </button>
@@ -793,69 +853,94 @@ interface CardProps extends CardActions {
 function FolderCard({ folder, selectMode, selected, onToggleSelect, onOpen, ...actions }: CardProps & { folder: Folder }) {
   return (
     <div
-      onClick={onOpen}
       className={cn(
-        'group cursor-pointer rounded-none border bg-white p-4 shadow-card transition hover:shadow',
-        selected ? 'border-stone-900' : 'border-stone-200 hover:border-stone-300',
+        'group flex items-center gap-2 rounded-xl border bg-white p-3 shadow-card transition hover:-translate-y-0.5 hover:shadow-md',
+        selected ? 'border-stone-900 ring-1 ring-stone-900' : 'border-stone-200 hover:border-stone-300',
       )}
     >
-      <div className="flex items-center gap-4">
+      <button
+        onClick={selectMode ? onToggleSelect : onOpen}
+        aria-label={selectMode ? `${selected ? 'Deselect' : 'Select'} ${folder.title}` : `Open ${folder.title}`}
+        aria-pressed={selectMode ? selected : undefined}
+        className="flex min-w-0 flex-1 items-center gap-4 rounded-lg p-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-700"
+      >
         {selectMode ? (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggleSelect();
-            }}
-            aria-label={selected ? 'Deselect folder' : 'Select folder'}
-            className="flex h-10 w-10 shrink-0 items-center justify-center text-stone-500"
-          >
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center text-stone-500">
             {selected ? <CheckSquare className="h-5 w-5" /> : <Square className="h-5 w-5" />}
-          </button>
+          </span>
         ) : (
-          <span className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-none', FOLDER_ACCENTS[folder.accent])}>
+          <span className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-lg', FOLDER_ACCENTS[folder.accent])}>
             <FolderOpen className="h-4 w-4" />
           </span>
         )}
         <div className="min-w-0 flex-1">
           <h3 className="truncate text-sm font-semibold">{folder.title}</h3>
           <p className="mt-0.5 truncate text-xs text-stone-500">
-            {folder.docCount} {folder.docCount === 1 ? 'doc' : 'docs'}
+            {folder.docCount} {folder.docCount === 1 ? 'doc' : 'docs'} · {formatDate(folder.createdAt)}
             {folder.recentCount > 0 && ` · +${folder.recentCount} this week`}
           </p>
         </div>
-        {!selectMode && <ActionCluster folder={folder} {...actions} />}
-      </div>
+      </button>
+      {!selectMode && <ActionCluster folder={folder} {...actions} />}
     </div>
   );
 }
 
 function FolderRow({ folder, selectMode, selected, onToggleSelect, onOpen, ...actions }: CardProps & { folder: Folder }) {
   return (
-    <button
-      onClick={onOpen}
-      className={cn(
-        'group flex items-center gap-4 rounded-none border bg-white p-4 text-left shadow-card transition hover:shadow',
-        selected ? 'border-stone-900' : 'border-stone-200 hover:border-stone-300',
+    <div className={cn(
+      'group flex items-center gap-2 rounded-xl border bg-white p-3 shadow-card transition hover:-translate-y-0.5 hover:shadow-md sm:gap-3 sm:px-4',
+      selected ? 'border-stone-900 ring-1 ring-stone-900' : 'border-stone-200 hover:border-stone-300',
+    )}>
+      <button
+        onClick={selectMode ? onToggleSelect : onOpen}
+        aria-label={selectMode ? `${selected ? 'Deselect' : 'Select'} ${folder.title}` : `Open ${folder.title}`}
+        aria-pressed={selectMode ? selected : undefined}
+        className="flex min-w-0 flex-1 items-center gap-3 rounded-lg p-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-700 sm:gap-4"
+      >
+        {selectMode ? (
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center text-stone-500">
+            {selected ? <CheckSquare className="h-5 w-5" /> : <Square className="h-5 w-5" />}
+          </span>
+        ) : (
+          <span className={cn('flex h-11 w-11 shrink-0 items-center justify-center rounded-xl', FOLDER_ACCENTS[folder.accent])}>
+            <FolderOpen className="h-5 w-5" />
+          </span>
+        )}
+        {/* Left — identity + details */}
+        <span className="min-w-0 flex-1">
+          <span className="flex items-center gap-2">
+            <span className="truncate text-sm font-semibold text-stone-900">{folder.title}</span>
+            {folder.pinned && (
+              <span title="Pinned" className="inline-flex shrink-0 items-center gap-1 rounded-full bg-stone-900 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+                <Pin className="h-3 w-3" /> Pinned
+              </span>
+            )}
+          </span>
+          <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-stone-500">
+            <span className="inline-flex items-center gap-1">
+              <FileText className="h-3.5 w-3.5 text-stone-400" />
+              {folder.docCount} {folder.docCount === 1 ? 'transcript' : 'transcripts'}
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <CalendarDays className="h-3.5 w-3.5 text-stone-400" />
+              Created {formatDate(folder.createdAt)}
+            </span>
+            {folder.recentCount > 0 && (
+              <span className="rounded-full bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200">
+                +{folder.recentCount} this week
+              </span>
+            )}
+          </span>
+        </span>
+      </button>
+      {/* Right — status + actions */}
+      {!selectMode && (
+        <span className="flex shrink-0 items-center gap-1 border-l border-stone-100 pl-2 sm:pl-3">
+          <ActionCluster folder={folder} {...actions} />
+        </span>
       )}
-    >
-      {selectMode ? (
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center text-stone-500">
-          {selected ? <CheckSquare className="h-5 w-5" /> : <Square className="h-5 w-5" />}
-        </span>
-      ) : (
-        <span className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-none', FOLDER_ACCENTS[folder.accent])}>
-          <FolderOpen className="h-4 w-4" />
-        </span>
-      )}
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-semibold">{folder.title}</span>
-        <span className="mt-0.5 block truncate text-xs text-stone-500">
-          {folder.docCount} {folder.docCount === 1 ? 'doc' : 'docs'} · Created {formatDate(folder.createdAt)}
-          {folder.recentCount > 0 && ` · +${folder.recentCount} this week`}
-        </span>
-      </span>
-      {!selectMode && <ActionCluster folder={folder} {...actions} />}
-    </button>
+    </div>
   );
 }
 
@@ -877,7 +962,7 @@ function ToggleBtn({
       aria-label={label}
       aria-pressed={active}
       className={cn(
-        'rounded-none p-2 transition',
+        'rounded-lg p-2 transition',
         active ? 'bg-stone-900 text-white' : 'text-stone-500 hover:bg-stone-100 hover:text-stone-800',
       )}
     >
@@ -918,7 +1003,7 @@ function DbErrorCard({
   };
 
   return (
-    <div className="mt-4 rounded-none border border-red-200 bg-red-50 p-6 text-center">
+    <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-6 text-center">
       <WifiOff className="mx-auto h-8 w-8 text-red-400" />
       <h2 className="mt-3 font-semibold text-red-900">Could not reach the database</h2>
       <p className="mx-auto mt-1 max-w-md text-sm text-red-700">{error}</p>
@@ -933,14 +1018,14 @@ function DbErrorCard({
       <div className="mt-4 flex items-center justify-center gap-2">
         <button
           onClick={onRetry}
-          className="rounded-none bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-600"
+          className="rounded-lg bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-600"
         >
           Retry connection
         </button>
         <button
           onClick={copyDiagnostics}
           title="Copy error details (host + message, no secrets)"
-          className="inline-flex items-center gap-1.5 rounded-none border border-red-300 bg-white px-3.5 py-2 text-sm font-medium text-red-700 hover:bg-red-100"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-red-300 bg-white px-3.5 py-2 text-sm font-medium text-red-700 hover:bg-red-100"
         >
           {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
           {copied ? 'Copied' : 'Copy details'}

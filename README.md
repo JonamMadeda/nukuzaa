@@ -1,14 +1,16 @@
-# Nukuzaa — YouTube Transcripts, Organized
+# Nukuzaa — YouTube Transcripts, Organized & Summarized
 
-Nukuzaa is a Windows desktop app for **extracting, saving, and reading YouTube
-video transcripts** organized into folder collections. Paste any YouTube link —
-watch, `youtu.be`, or Shorts — and get a clean, readable transcript you can
-search, copy, or export as PDF.
+Nukuzaa is a Windows desktop app for **extracting, saving, reading, and
+AI-summarizing YouTube video transcripts** organized into folder collections.
+Paste any YouTube link — watch, `youtu.be`, or Shorts — and get a clean,
+readable transcript plus a comprehensive AI summary (TL;DR, every key point,
+topics in order, actionable takeaways, notable quotes) you can search, copy,
+or export as PDF.
 
 ## Install (recommended)
 
 1. Go to **[Releases](https://github.com/JonamMadeda/nukuzaa/releases/latest)**
-   and download **`Nukuzaa_0.2.4_x64-setup.exe`**.
+   and download **`Nukuzaa_0.3.0_x64-setup.exe`**.
 2. Double-click the setup file and follow the installer. This adds Nukuzaa to
    your Start Menu and Apps list.
 3. Open **Nukuzaa** and start saving transcripts. No accounts, no settings,
@@ -19,7 +21,7 @@ search, copy, or export as PDF.
 > Click **More info → Run anyway**. The app updates itself from this GitHub
 > repo (see below), so you only need to trust this one prompt.
 
-**No-install option:** download **`Nukuzaa-0.2.4-portable.exe`** from the same
+**No-install option:** download **`Nukuzaa-0.3.0-portable.exe`** from the same
 release page and double-click it — nothing is installed.
 
 **Requirements:** Windows 10/11 64-bit and an internet connection. (WebView2
@@ -29,8 +31,9 @@ is preinstalled on modern Windows.)
 
 1. Click **Create New Folder** (e.g. "Machine Learning").
 2. Open the folder, paste a YouTube URL, click **Add document**.
-3. Click the saved card to read — switch between **Paragraphs** and
-   **Timestamps**, **Copy All**, or **Export PDF**.
+3. Click the saved card to read — the **Summary** tab opens first with the full
+   AI breakdown; switch to **Paragraphs** or **Timestamps** for the full text,
+   **Copy All**, or **Export PDF**.
 
 ## Updates
 
@@ -41,9 +44,11 @@ need to revisit the releases page unless you want to.
 
 ## Features
 
+- **AI video summaries** — comprehensive TL;DR, key points, topics, takeaways,
+  and quotes for every transcript, served securely per user
 - Folder collections with document counts, search, and grid/list views
 - Local caption extraction (runs on your machine, no datacenter blocks)
-- Reader with paragraphs/timestamps views, copy-all, and PDF export
+- Dedicated reader page with summary/paragraphs/timestamps views, copy-all, and PDF export
 - Dashboard metrics: folders, documents, collections
 - Automatic database reconnection (rides out cloud cold starts)
 
@@ -69,4 +74,4 @@ and release process: **[docs/nukuzaa-guide.md](docs/nukuzaa-guide.md)**.
 | "No captions found" | Video has captions disabled, or auto-captions still processing |
 | Import fails | Transcripts import only in the desktop app, not a browser |
 
-Current version: **0.2.4**
+Current version: **0.3.0**

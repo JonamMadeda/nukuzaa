@@ -1,0 +1,28 @@
+# Nukuzaa summary proxy — Cloudflare Worker config (TOML).
+#
+# Public identifiers only — safe to commit. The shared OpenRouter key is
+# NEVER here; set it via:  npx wrangler secret put OPENROUTER_API_KEY
+
+name = "nukuzaa-summary-proxy"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+
+# --- Fill these in (already set for your Neon Auth project) ---
+# AUTH_BASE_URL must match the app's VITE_NEON_AUTH_URL.
+# Issuer/audience are derived as its origin, exactly like the app does.
+[vars]
+AUTH_BASE_URL = "https://ep-weathered-art-aeb3r9ef.neonauth.c-2.us-east-2.aws.neon.tech/neondb/auth"
+JWKS_URL = "https://ep-weathered-art-aeb3r9ef.neonauth.c-2.us-east-2.aws.neon.tech/neondb/auth/.well-known/jwks.json"
+PRIMARY_MODEL = "nvidia/nemotron-3-ultra-550b-a55b:free"
+DAILY_LIMIT_PER_USER = "10"
+
+# Daily per-user counters. Create once, then replace the id below:
+#   npx wrangler kv:namespace create SUMMARY_KV
+[[kv_namespaces]]
+binding = "SUMMARY_KV"
+id = "fb3c1c42364b46c7b6998a9617d17b5f"
+
+# --- Secrets (NEVER commit; set via CLI) ---
+#   npx wrangler secret put OPENROUTER_API_KEY
+# Optional model override:
+#   npx wrangler secret put MODEL_OVERRIDE

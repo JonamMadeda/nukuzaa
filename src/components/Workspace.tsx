@@ -178,21 +178,23 @@ export default function Workspace({ folder, allFolders, onBack, onDocsChanged, o
       <div className="flex flex-wrap items-center gap-2.5">
         <button
           onClick={onBack}
-          className="inline-flex shrink-0 items-center gap-2 rounded-none border border-stone-300 bg-white px-3 py-2 text-sm font-medium text-stone-700 hover:bg-stone-100"
+          className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm font-medium text-stone-700 hover:bg-stone-100"
         >
           <ArrowLeft className="h-4 w-4" /> Back to Folders
         </button>
         <div className="min-w-0 flex-1 leading-tight">
           <h1 className="truncate text-lg font-bold tracking-tight">{folder.title}</h1>
           <p className="text-xs text-stone-500">
-            {docs.length} {docs.length === 1 ? 'document' : 'documents'} in this collection
+            {folder.docCount} saved {folder.docCount === 1 ? 'transcript' : 'transcripts'}
+            {favOnly ? ' · Showing favorites' : ' · All transcripts'}
           </p>
         </div>
         <select
           value={sort}
           onChange={(e) => setSort(e.target.value as DocSort)}
+          aria-label="Sort transcripts"
           title="Sort documents"
-          className="rounded-none border border-stone-300 bg-white px-2 py-2 text-sm text-stone-700 outline-none focus:border-stone-900"
+          className="rounded-lg border border-stone-300 bg-white px-2 py-2 text-sm text-stone-700 outline-none focus:border-stone-900"
         >
           <option value="newest">Newest</option>
           <option value="oldest">Oldest</option>
@@ -201,9 +203,10 @@ export default function Workspace({ folder, allFolders, onBack, onDocsChanged, o
         <button
           onClick={() => setFavOnly((v) => !v)}
           title={favOnly ? 'Show all documents' : 'Show favorites only'}
+          aria-label={favOnly ? 'Show all transcripts' : 'Show favorite transcripts only'}
           aria-pressed={favOnly}
           className={cn(
-            'inline-flex items-center gap-1.5 rounded-none border px-3 py-2 text-sm font-medium transition',
+            'inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition',
             favOnly
               ? 'border-stone-900 bg-stone-900 text-white'
               : 'border-stone-300 bg-white text-stone-500 hover:text-amber-600',
@@ -215,7 +218,7 @@ export default function Workspace({ folder, allFolders, onBack, onDocsChanged, o
       </div>
 
       {/* Add-document bar */}
-      <div className="mt-4 flex flex-col gap-2 rounded-none border border-stone-200 bg-white p-2 shadow-card sm:flex-row">
+      <div className="mt-4 flex flex-col gap-2 rounded-lg border border-stone-200 bg-white p-2 shadow-card sm:flex-row">
         <div className="relative flex-1">
           <Link2 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" />
           <input
@@ -227,13 +230,13 @@ export default function Workspace({ folder, allFolders, onBack, onDocsChanged, o
             }}
             placeholder="Paste any YouTube URL — watch, youtu.be, Shorts, or playlist…"
             disabled={extracting}
-            className="w-full rounded-none border border-stone-300 py-2 pl-9 pr-3 text-sm outline-none placeholder:text-stone-400 focus:border-stone-900 focus:ring-2 focus:ring-stone-200 disabled:bg-stone-50"
+            className="w-full rounded-lg border border-stone-300 py-2 pl-9 pr-3 text-sm outline-none placeholder:text-stone-400 focus:border-stone-900 focus:ring-2 focus:ring-stone-200 disabled:bg-stone-50"
           />
         </div>
         <button
           onClick={addDocument}
           disabled={!url.trim() || extracting}
-          className="inline-flex items-center justify-center gap-2 rounded-none bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-700 disabled:opacity-50"
+          className="ui-primary"
         >
           {extracting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
           {extracting ? 'Extracting…' : 'Add document'}
@@ -241,7 +244,7 @@ export default function Workspace({ folder, allFolders, onBack, onDocsChanged, o
         <button
           onClick={() => setBulkOpen(true)}
           title="Import many URLs or a playlist at once"
-          className="inline-flex items-center justify-center gap-2 rounded-none border border-stone-300 px-4 py-2 text-sm font-medium text-stone-700 hover:bg-stone-100"
+          className="inline-flex items-center justify-center gap-2 rounded-lg border border-stone-300 px-4 py-2 text-sm font-medium text-stone-700 hover:bg-stone-100"
         >
           <ListPlus className="h-4 w-4" /> Bulk
         </button>
@@ -256,24 +259,24 @@ export default function Workspace({ folder, allFolders, onBack, onDocsChanged, o
       {loading ? (
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="overflow-hidden rounded-none border border-stone-200 bg-white">
+            <div key={i} className="overflow-hidden rounded-lg border border-stone-200 bg-white">
               <div className="aspect-video animate-pulse bg-stone-200" />
               <div className="p-3">
-                <div className="h-4 w-3/4 animate-pulse rounded-none bg-stone-200" />
-                <div className="mt-2 h-3 w-1/3 animate-pulse rounded-none bg-stone-100" />
+                <div className="h-4 w-3/4 animate-pulse rounded-lg bg-stone-200" />
+                <div className="mt-2 h-3 w-1/3 animate-pulse rounded-lg bg-stone-100" />
               </div>
             </div>
           ))}
         </div>
       ) : loadError ? (
         <div>
-          <div className="mt-4 rounded-none border border-red-200 bg-red-50 p-6 text-center">
+          <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-6 text-center">
             <WifiOff className="mx-auto h-8 w-8 text-red-400" />
             <h2 className="mt-3 font-semibold text-red-900">Could not load documents</h2>
             <p className="mx-auto mt-1 max-w-md text-sm text-red-700">{loadError}</p>
             <button
               onClick={refresh}
-              className="mt-4 rounded-none bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-600"
+              className="mt-4 rounded-lg bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-600"
             >
               Retry
             </button>
@@ -292,7 +295,7 @@ export default function Workspace({ folder, allFolders, onBack, onDocsChanged, o
           )}
         </div>
       ) : docs.length === 0 ? (
-        <div className="mt-4 rounded-none border border-dashed border-stone-300 bg-white p-8 text-center">
+        <div className="mt-4 rounded-lg border border-dashed border-stone-300 bg-white p-8 text-center">
           <FileText className="mx-auto h-8 w-8 text-stone-300" />
           <h2 className="mt-3 font-semibold">No documents yet</h2>
           <p className="mx-auto mt-1 max-w-sm text-sm text-stone-500">
@@ -304,75 +307,65 @@ export default function Workspace({ folder, allFolders, onBack, onDocsChanged, o
           {docs.map((d) => (
             <article
               key={d.id}
-              onClick={() => onOpenDoc(d)}
-              className="group cursor-pointer overflow-hidden rounded-none border border-stone-200 bg-white shadow-card transition hover:border-stone-300 hover:shadow"
+              className="group overflow-hidden rounded-xl border border-stone-200 bg-white shadow-card transition hover:-translate-y-0.5 hover:border-stone-300 hover:shadow-md"
             >
-              <div className="relative aspect-video overflow-hidden bg-stone-100">
-                {d.thumbnail ? (
-                  <img src={d.thumbnail} alt="" loading="lazy" className="h-full w-full object-cover" />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center">
-                    <FileText className="h-8 w-8 text-stone-300" />
-                  </div>
-                )}
-                <span className="absolute bottom-2 right-2 rounded-none bg-black/70 px-1.5 py-0.5 text-[11px] font-medium text-white">
-                  {d.captions.length} cues
-                </span>
-                {d.favorite && (
-                  <Star className="absolute left-2 top-2 h-4 w-4 fill-amber-400 text-amber-400" />
-                )}
-              </div>
-              <div className="p-3">
-                <h3 className="line-clamp-2 min-h-[2.25rem] text-sm font-semibold leading-snug">{d.title}</h3>
-                {d.tags.length > 0 && (
-                  <p className="mt-1 truncate text-[11px] text-stone-500">
-                    {d.tags.slice(0, 3).map((t) => `#${t}`).join(' ')}
-                    {d.tags.length > 3 ? ` +${d.tags.length - 3}` : ''}
-                  </p>
-                )}
-                <div className="mt-1.5 flex items-center justify-between">
-                  <p className="text-xs text-stone-500">{formatDate(d.createdAt)}</p>
-                  <span className="flex items-center">
-                    <button
-                      title={d.favorite ? 'Remove from favorites' : 'Add to favorites'}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        void toggleFavorite(d);
-                      }}
-                      className={cn(
-                        'rounded-none p-1.5 transition',
-                        d.favorite ? 'text-amber-500' : 'text-stone-300 hover:text-amber-500',
-                      )}
-                    >
-                      <Star className={cn('h-4 w-4', d.favorite && 'fill-amber-400')} />
-                    </button>
-                    <button
-                      title="Move to another folder"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setMovingDoc(d);
-                      }}
-                      className="rounded-none p-1.5 text-stone-300 transition hover:text-stone-600"
-                    >
-                      <FolderInput className="h-4 w-4" />
-                    </button>
-                    <button
-                      title="Delete document"
-                      disabled={deletingId === d.id}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        removeDoc(d);
-                      }}
-                      className="rounded-none p-1.5 text-stone-300 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
-                    >
-                      {deletingId === d.id ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Trash2 className="h-4 w-4" />
-                      )}
-                    </button>
+              <button onClick={() => onOpenDoc(d)} aria-label={`Read transcript: ${d.title}`} className="block w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-yellow-700">
+                <div className="relative aspect-video overflow-hidden bg-stone-100">
+                  {d.thumbnail ? (
+                    <img src={d.thumbnail} alt="" loading="lazy" className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.02]" />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center">
+                      <FileText className="h-8 w-8 text-stone-300" />
+                    </div>
+                  )}
+                  <span className="absolute bottom-2 right-2 rounded-md bg-stone-950/80 px-2 py-1 text-[11px] font-medium text-white">
+                    {d.captions.length} cues
                   </span>
+                  {d.favorite && <Star aria-label="Favorite" className="absolute left-2 top-2 h-5 w-5 fill-yellow-300 text-yellow-300 drop-shadow" />}
                 </div>
+                <div className="p-3 pb-2">
+                  <h3 className="line-clamp-2 min-h-[2.5rem] text-sm font-semibold leading-snug text-stone-900">{d.title}</h3>
+                  {d.tags.length > 0 && (
+                    <p className="mt-2 truncate text-[11px] text-stone-500">
+                      {d.tags.slice(0, 3).map((t) => `#${t}`).join(' ')}
+                      {d.tags.length > 3 ? ` +${d.tags.length - 3}` : ''}
+                    </p>
+                  )}
+                </div>
+              </button>
+              <div className="flex items-center justify-between border-t border-stone-100 px-3 py-1.5">
+                <p className="text-xs text-stone-500">{formatDate(d.createdAt)}</p>
+                <span className="flex items-center">
+                  <button
+                    type="button"
+                    title={d.favorite ? 'Remove from favorites' : 'Add to favorites'}
+                    aria-label={d.favorite ? 'Remove from favorites' : 'Add to favorites'}
+                    aria-pressed={d.favorite}
+                    onClick={() => void toggleFavorite(d)}
+                    className={cn('rounded-md p-2 transition hover:bg-yellow-50', d.favorite ? 'text-amber-600' : 'text-stone-500 hover:text-amber-700')}
+                  >
+                    <Star className={cn('h-4 w-4', d.favorite && 'fill-yellow-300')} />
+                  </button>
+                  <button
+                    type="button"
+                    title="Move to another folder"
+                    aria-label="Move to another folder"
+                    onClick={() => setMovingDoc(d)}
+                    className="rounded-md p-2 text-stone-500 transition hover:bg-stone-100 hover:text-stone-900"
+                  >
+                    <FolderInput className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    title="Delete document"
+                    aria-label="Delete document"
+                    disabled={deletingId === d.id}
+                    onClick={() => void removeDoc(d)}
+                    className="rounded-md p-2 text-stone-500 transition hover:bg-red-50 hover:text-red-700 disabled:opacity-50"
+                  >
+                    {deletingId === d.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                  </button>
+                </span>
               </div>
             </article>
           ))}
@@ -404,7 +397,7 @@ function OfflineCard({ doc, onOpen }: { doc: TranscriptDoc; onOpen: () => void }
   return (
     <button
       onClick={onOpen}
-      className="overflow-hidden rounded-none border border-dashed border-stone-300 bg-white text-left transition hover:border-stone-400"
+      className="overflow-hidden rounded-lg border border-dashed border-stone-300 bg-white text-left transition hover:border-stone-400"
     >
       <div className="p-3">
         <h3 className="line-clamp-2 min-h-[2.25rem] text-sm font-semibold leading-snug">{doc.title}</h3>
