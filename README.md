@@ -10,7 +10,7 @@ or export as PDF.
 ## Install (recommended)
 
 1. Go to **[Releases](https://github.com/JonamMadeda/nukuzaa/releases/latest)**
-   and download **`Nukuzaa_0.3.0_x64-setup.exe`**.
+   and download **`Nukuzaa_0.3.1_x64-setup.exe`**.
 2. Double-click the setup file and follow the installer. This adds Nukuzaa to
    your Start Menu and Apps list.
 3. Open **Nukuzaa** and start saving transcripts. No accounts, no settings,
@@ -21,7 +21,7 @@ or export as PDF.
 > Click **More info → Run anyway**. The app updates itself from this GitHub
 > repo (see below), so you only need to trust this one prompt.
 
-**No-install option:** download **`Nukuzaa-0.3.0-portable.exe`** from the same
+**No-install option:** download **`Nukuzaa-0.3.1-portable.exe`** from the same
 release page and double-click it — nothing is installed.
 
 **Requirements:** Windows 10/11 64-bit and an internet connection. (WebView2
@@ -74,4 +74,4 @@ and release process: **[docs/nukuzaa-guide.md](docs/nukuzaa-guide.md)**.
 | "No captions found" | Video has captions disabled, or auto-captions still processing |
 | Import fails | Transcripts import only in the desktop app, not a browser |
 
-Current version: **0.3.0**
+Current version: **0.3.1**
