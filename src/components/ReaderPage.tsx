@@ -9,10 +9,13 @@ import {
   Copy,
   ExternalLink,
   FileDown,
+  FileText,
   Languages,
   Link2,
   ListOrdered,
+  MessageCircle,
   Pencil,
+  Search,
   Sparkles,
   Star,
   Tag,
@@ -33,8 +36,10 @@ import {
 import { extractTrackFromUrl, listAvailableTracks } from '../lib/extractor';
 import { replaceTranscriptContent, updateTranscriptMeta } from '../lib/db';
 import { cacheDoc } from '../lib/cache';
+import { mirrorDoc } from '../lib/vault';
 import { useToast } from '../hooks/useToast';
 import VideoSummary from './VideoSummary';
+import VideoChat from './VideoChat';
 
 interface Props {
   doc: TranscriptDoc;
@@ -44,7 +49,7 @@ interface Props {
   onDocUpdated?: (d: TranscriptDoc) => void;
 }
 
-type ReaderMode = 'paragraphs' | 'timestamps' | 'summary';
+type ReaderMode = 'paragraphs' | 'timestamps' | 'summary' | 'chat' | 'organize';
 const MAX_MATCHES = 200;
 
 async function copyText(text: string): Promise<void> {
@@ -87,7 +92,12 @@ export default function ReaderPage({ doc, originFolder, onBack, onDocUpdated }: 
   const [tracks, setTracks] = useState<TrackInfo[] | null>(null);
   const [tracksLoading, setTracksLoading] = useState(false);
   const [switchingLang, setSwitchingLang] = useState<string | null>(null);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [tsMoreOpen, setTsMoreOpen] = useState(false);
+  const [tsCopied, setTsCopied] = useState(false);
+  const [readProgress, setReadProgress] = useState(0);
   const matchRefs = useRef<Array<HTMLElement | null>>([]);
+  const contentRef = useRef<HTMLDivElement | null>(null);
 
   // Reset per-document UI + remember for offline reading.
   useEffect(() => {
@@ -100,14 +110,44 @@ export default function ReaderPage({ doc, originFolder, onBack, onDocUpdated }: 
     setNotesDraft(doc?.notes ?? '');
     setTagInput('');
     setTracks(null);
+    setMoreOpen(false);
+    setReadProgress(0);
     matchRefs.current = [];
     if (doc) cacheDoc(doc);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docId]);
 
+  // Thin reading-progress bar driven by the article scroll position.
+  useEffect(() => {
+    if (mode === 'summary' || mode === 'chat') {
+      setReadProgress(0);
+      return;
+    }
+    const onScroll = () => {
+      const el = contentRef.current;
+      if (!el) return;
+      const max = el.scrollHeight - el.clientHeight;
+      setReadProgress(max > 0 ? Math.min(1, el.scrollTop / max) : 0);
+    };
+    const el = contentRef.current;
+    el?.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+    return () => el?.removeEventListener('scroll', onScroll);
+  }, [mode, docId]);
+
   const displayText = useMemo(() => (doc ? docDisplayText(doc) : ''), [doc]);
   const q = search.trim().toLowerCase();
-  const inSummary = mode === 'summary';
+  const inRead = mode === 'paragraphs' || mode === 'timestamps';
+  const notesDirty = notesDraft !== (doc?.notes ?? '');
+
+  // -- Derived doc insights (sidebar stats) ----------------------------------
+  const wordCount = useMemo(() => {
+    const t = displayText.trim();
+    return t ? t.split(/\s+/).length : 0;
+  }, [displayText]);
+  const readMins = Math.max(1, Math.ceil(wordCount / 200));
+  const cueCount = doc?.captions.length ?? 0;
+  const highlightCount = doc?.highlights.length ?? 0;
 
   // -- Search matches -------------------------------------------------------
   const paraOffsets = useMemo(() => {
@@ -161,6 +201,7 @@ export default function ReaderPage({ doc, originFolder, onBack, onDocUpdated }: 
     try {
       const updated = await updateTranscriptMeta(current.id, current, patch);
       onDocUpdated?.(updated);
+      void mirrorDoc({ ...updated, folderTitle: originFolder?.title ?? updated.folderTitle }).catch(() => {});
       if (okMsg) notify('success', okMsg);
       return true;
     } catch (e) {
@@ -209,6 +250,20 @@ export default function ReaderPage({ doc, originFolder, onBack, onDocUpdated }: 
     window.setTimeout(() => setCopied(false), 2000);
   };
 
+  const doCopyTimestamps = async () => {
+    const lines = [
+      `# ${current.title} — Timestamps`,
+      '',
+      `Source: ${current.url}`,
+      '',
+      ...current.captions.map((c) => `[${formatMMSS(c.start)}] ${c.text}`),
+    ];
+    await copyText(`${lines.join('\n')}\n`);
+    setTsCopied(true);
+    notify('success', 'Timestamps copied to clipboard.');
+    window.setTimeout(() => setTsCopied(false), 2000);
+  };
+
   const exportPdf = () => {
     // Save-as-PDF inherits document.title as the suggested filename.
     const prev = document.title;
@@ -248,6 +303,7 @@ export default function ReaderPage({ doc, originFolder, onBack, onDocUpdated }: 
         trackKind: r.trackKind,
       });
       onDocUpdated?.(updated);
+      void mirrorDoc({ ...updated, folderTitle: originFolder?.title ?? updated.folderTitle }).catch(() => {});
       setEditing(false);
       notify('success', `Switched to ${lang} captions (${r.captions.length} cues).`);
     } catch (e) {
@@ -305,389 +361,676 @@ export default function ReaderPage({ doc, originFolder, onBack, onDocUpdated }: 
     return <>{parts}</>;
   };
 
-  return (
-    <div className="mx-auto max-w-5xl px-4 py-5 sm:px-6">
-      {/* Row 0 — navigation + title */}
-      <div className="flex flex-wrap items-center gap-2.5">
-        <button
-          onClick={onBack}
-          className="no-print inline-flex shrink-0 items-center gap-2 rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm font-medium text-stone-700 hover:bg-stone-100"
-        >
-          <ArrowLeft className="h-4 w-4" /> {originFolder ? 'Back to folder' : 'Back to dashboard'}
-        </button>
-        <div className="min-w-0 flex-1 leading-tight">
-          <h1 className="truncate text-lg font-bold tracking-tight">{current.title}</h1>
-          <p className="truncate text-xs text-stone-500">
-            {originFolder ? `In “${originFolder.title}”` : 'From your library'} · {current.captions.length} cues
-          </p>
-        </div>
-        <button
-          onClick={toggleFavorite}
-          title={current.favorite ? 'Remove from favorites' : 'Add to favorites'}
-          className={cn(
-            'no-print shrink-0 rounded-lg border border-stone-300 bg-white p-2 transition hover:bg-amber-50',
-            current.favorite ? 'text-amber-500' : 'text-stone-300 hover:text-amber-500',
-          )}
-        >
-          <Star className={cn('h-5 w-5', current.favorite && 'fill-amber-400')} />
-        </button>
-      </div>
+  const gotoView = (v: ReaderMode) => {
+    setMoreOpen(false);
+    setMode(v);
+  };
 
-      {/* Video meta card */}
-      <div className="mt-3 flex flex-col gap-3 rounded-xl border border-stone-200 bg-white p-3 shadow-card sm:flex-row sm:items-center sm:p-4">
-        {current.thumbnail && (
-          <img src={current.thumbnail} alt="" className="h-auto w-full shrink-0 rounded-lg object-cover sm:h-24 sm:w-44" />
-        )}
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <button
-              onClick={() => void openExternal(current.url)}
-              className="inline-flex items-center gap-1.5 text-sm font-medium text-sky-700 hover:text-sky-900 hover:underline"
-            >
-              <ExternalLink className="h-3.5 w-3.5" /> Watch video
-            </button>
-            {current.trackLang && (
-              <span className="inline-flex items-center gap-1 text-xs text-stone-500">
-                <Languages className="h-3.5 w-3.5" />
-                {current.trackLang}
-                {current.trackKind === 'asr' ? ' (auto)' : ''}
-              </span>
-            )}
-            {current.editedText != null && (
-              <span className="bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800">Edited</span>
-            )}
+  return (
+    <div>
+      {/* Full-bleed header bar, sticky top */}
+      <div className="sticky top-0 z-30 border-b border-stone-200/80 bg-white/95 backdrop-blur-md">
+        <div className="mx-auto flex h-16 max-w-7xl items-center gap-3 px-4 sm:px-6 lg:px-8">
+          <button
+            onClick={onBack}
+            title={originFolder ? 'Back to collection' : 'Back to library'}
+            aria-label={originFolder ? 'Back to collection' : 'Back to library'}
+            className="no-print inline-flex shrink-0 items-center justify-center rounded-md border border-stone-200 bg-white p-2 text-stone-600 shadow-xs transition hover:border-stone-300 hover:bg-stone-50 hover:text-stone-900"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </button>
+          {current.thumbnail && (
+            <img src={current.thumbnail} alt="" className="hidden h-10 w-16 shrink-0 rounded-md object-cover ring-1 ring-stone-900/5 sm:block" />
+          )}
+          <div className="min-w-0 flex-1 leading-tight">
+            <h1 className="truncate text-sm font-bold text-stone-900" title={current.title}>{current.title}</h1>
+            <p className="mt-0.5 flex flex-wrap items-center gap-1.5 truncate text-xs text-stone-500">
+              <span className="font-medium text-stone-700">{originFolder ? originFolder.title : 'Library'}</span>
+              <span className="text-stone-300">·</span>
+              <span>{cueCount} cues</span>
+              <span className="text-stone-300">·</span>
+              <span>~{readMins} min read</span>
+              {current.trackLang && (
+                <>
+                  <span className="text-stone-300">·</span>
+                  <span className="rounded bg-stone-100 px-1 py-0.2 text-[10px] uppercase font-medium">{current.trackLang}</span>
+                </>
+              )}
+              {highlightCount > 0 && (
+                <>
+                  <span className="text-stone-300">·</span>
+                  <span className="text-amber-600 font-medium">{highlightCount} ★</span>
+                </>
+              )}
+              {current.editedText != null && (
+                <span className="rounded bg-amber-100 px-1.5 py-0.2 text-[10px] font-semibold text-amber-900">Edited</span>
+              )}
+            </p>
           </div>
-          <p className="mt-1 break-all text-xs text-stone-400">{current.url}</p>
+          <button
+            onClick={() => void openExternal(current.url)}
+            title="Watch video on YouTube"
+            className="no-print ui-secondary h-9 px-3 text-xs font-semibold"
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Watch video</span>
+          </button>
+          <button
+            onClick={toggleFavorite}
+            title={current.favorite ? 'Remove from favorites' : 'Add to favorites'}
+            aria-pressed={current.favorite}
+            className={cn(
+              'no-print inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-stone-200 bg-white shadow-xs transition hover:border-stone-300',
+              current.favorite ? 'text-amber-500 hover:bg-amber-50' : 'text-stone-400 hover:text-amber-500 hover:bg-stone-50',
+            )}
+          >
+            <Star className={cn('h-4 w-4', current.favorite && 'fill-amber-400')} />
+          </button>
         </div>
       </div>
+      <div className="mx-auto max-w-7xl px-4 pb-6 pt-4 sm:px-6 lg:px-8">
 
       {/* Print-only title block (screen: hidden, print: shown) */}
-      <div className="print-area hidden px-1 pb-1 pt-4 print:block">
-        <h1 className="text-xl font-bold text-black">{current.title}</h1>
+      <div className="print-area hidden border-b-2 border-stone-900 px-1 pb-3 pt-2 print:block">
+        <h1 className="text-2xl font-bold leading-snug text-black">{current.title}</h1>
         <p className="mt-1 break-all text-xs text-stone-600">{current.url}</p>
-        <p className="mt-0.5 text-xs text-stone-500">
+        <p className="mt-1 text-xs text-stone-500">
           Exported from Nukuzaa on{' '}
           {new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })} ·{' '}
-          {current.captions.length} cues · {mode === 'paragraphs' ? 'paragraphs' : mode === 'timestamps' ? 'timestamps' : 'summary'}
+          {cueCount} cues · {mode === 'paragraphs' ? 'transcript' : mode === 'timestamps' ? 'timestamps' : mode === 'chat' ? 'chat' : mode === 'organize' ? 'notes & tags' : 'summary'}
         </p>
       </div>
 
-      {/* Row 1 — view tabs */}
-      <div className="no-print mt-4 flex flex-col gap-1">
-        <span className="text-xs font-medium uppercase tracking-wide text-stone-500">View</span>
-        <div role="tablist" aria-label="Transcript view" className="flex rounded-lg bg-stone-100 p-1 text-sm sm:inline-flex sm:self-start">
-          <button
-            role="tab"
-            aria-selected={mode === 'summary'}
-            onClick={() => setMode('summary')}
-            className={cn(
-              'inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg px-4 py-1.5 font-medium transition sm:flex-none',
-              mode === 'summary' ? 'bg-white text-stone-900 shadow' : 'text-stone-500 hover:text-stone-800',
-            )}
-          >
-            <Sparkles className="h-4 w-4" /> Summary
-          </button>
-          <button
-            role="tab"
-            aria-selected={mode === 'paragraphs'}
-            onClick={() => setMode('paragraphs')}
-            className={cn(
-              'inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg px-4 py-1.5 font-medium transition sm:flex-none',
-              mode === 'paragraphs' ? 'bg-white text-stone-900 shadow' : 'text-stone-500 hover:text-stone-800',
-            )}
-          >
-            <AlignLeft className="h-4 w-4" /> Paragraphs
-          </button>
-          <button
-            role="tab"
-            aria-selected={mode === 'timestamps'}
-            onClick={() => setMode('timestamps')}
-            className={cn(
-              'inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg px-4 py-1.5 font-medium transition sm:flex-none',
-              mode === 'timestamps' ? 'bg-white text-stone-900 shadow' : 'text-stone-500 hover:text-stone-800',
-            )}
-          >
-            <ListOrdered className="h-4 w-4" /> Timestamps
-          </button>
-        </div>
-      </div>
-
-      {/* Row 2 — search */}
-      {!inSummary && (
-        <div className="no-print mt-3 flex flex-col gap-1">
-          <span className="text-xs font-medium uppercase tracking-wide text-stone-500">Search in transcript</span>
-          <div className="flex flex-wrap items-center gap-2">
-            <input
-              id="reader-search"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') stepMatch(e.shiftKey ? -1 : 1);
-              }}
-              placeholder="Type to find matches… (Enter = next)"
-              aria-label="Search in transcript"
-              className="min-w-36 flex-1 rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm outline-none placeholder:text-stone-400 focus:border-yellow-600 focus:ring-2 focus:ring-yellow-100"
-            />
-            {q && (
-              <span className="inline-flex items-center gap-1 text-xs text-stone-500">
-                {matchCount} {matchCount === 1 ? 'match' : 'matches'}
-                <button
-                  onClick={() => stepMatch(-1)}
-                  title="Previous match (Shift+Enter)"
-                  className="rounded-lg border border-stone-300 bg-white p-1.5 hover:bg-stone-100"
-                >
-                  <ChevronUp className="h-4 w-4" />
-                </button>
-                <button
-                  onClick={() => stepMatch(1)}
-                  title="Next match (Enter)"
-                  className="rounded-lg border border-stone-300 bg-white p-1.5 hover:bg-stone-100"
-                >
-                  <ChevronDown className="h-4 w-4" />
-                </button>
-              </span>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Row 3 — actions */}
-      {!inSummary && (
-        <div className="no-print mt-3 flex flex-col gap-1">
-          <span className="text-xs font-medium uppercase tracking-wide text-stone-500">Actions</span>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={exportPdf}
-              title="Open the print dialog — filename defaults to this video's title"
-              className="inline-flex items-center gap-2 rounded-lg border border-stone-300 bg-white px-3.5 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-100"
-            >
-              <FileDown className="h-4 w-4" />
-              Export PDF
-            </button>
-            <button
-              onClick={() => void doCopyAll(false)}
-              className="inline-flex items-center gap-2 rounded-lg border border-stone-300 bg-white px-3.5 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-100"
-            >
-              {copied ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
-              {copied ? 'Copied!' : 'Copy All'}
-            </button>
-            <details className="relative">
-              <summary className="inline-flex cursor-pointer list-none items-center gap-2 rounded-lg border border-stone-300 bg-white px-3.5 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-100 [&::-webkit-details-marker]:hidden">
-                More
-              </summary>
-              <div className="absolute left-0 z-10 mt-1 w-52 border border-stone-200 bg-white py-1 shadow-lg">
-                <MenuItem label="Copy as Markdown" onClick={() => void doCopyAll(true)} />
-                <MenuItem
-                  label="Download .txt"
-                  onClick={() => downloadTextFile(`${stem}.txt`, displayText)}
+      {/* Sidebar + content */}
+      <div className="mt-2 flex flex-col gap-3 lg:flex-row lg:items-start">
+        {/* ============ Sidebar ============ */}
+        <aside className="no-print w-full shrink-0 lg:w-72">
+          <div className="flex flex-col gap-3 lg:sticky lg:top-4">
+            {/* View — one compact switcher for AI and reading modes */}
+            <nav aria-label="Reader views" className="rounded-lg border border-stone-200/90 bg-white p-2 shadow-card">
+              <div role="tablist" aria-label="Reader view" className="flex flex-col gap-0.5">
+                <p className="px-2 pb-0.5 pt-1 text-[11px] font-bold uppercase tracking-[.14em] text-stone-400">AI</p>
+                <SidebarTab
+                  active={mode === 'summary'}
+                  onClick={() => gotoView('summary')}
+                  icon={<Sparkles className="h-4 w-4" />}
+                  tone="amber"
+                  title="Summary"
+                  subtitle="TL;DR, key points & takeaways"
                 />
-                <MenuItem
-                  label="Download .md"
-                  onClick={() => downloadTextFile(`${stem}.md`, buildMarkdown(current), 'text/markdown;charset=utf-8')}
+                <SidebarTab
+                  active={mode === 'chat'}
+                  onClick={() => gotoView('chat')}
+                  icon={<MessageCircle className="h-4 w-4" />}
+                  tone="sky"
+                  title="Ask this video"
+                  subtitle="Q&A grounded in the transcript"
                 />
-                <MenuItem
-                  label="Download .srt"
-                  onClick={() => downloadTextFile(`${stem}.srt`, buildSrt(current), 'text/plain;charset=utf-8')}
+                <p className="px-2 pb-0.5 pt-2 text-[11px] font-bold uppercase tracking-[.14em] text-stone-400">Organize</p>
+                <SidebarTab
+                  active={mode === 'organize'}
+                  onClick={() => gotoView('organize')}
+                  icon={<Pencil className="h-4 w-4" />}
+                  title="Notes & tags"
+                  subtitle={notesDirty ? 'Unsaved changes' : current.tags.length > 0 ? `${current.tags.length} ${current.tags.length === 1 ? 'tag' : 'tags'}` : 'Notes, tags & languages'}
+                  badge={notesDirty ? 'Unsaved' : undefined}
                 />
-                <MenuItem
-                  label="Download .vtt"
-                  onClick={() => downloadTextFile(`${stem}.vtt`, buildVtt(current), 'text/vtt;charset=utf-8')}
+                <p className="px-2 pb-0.5 pt-2 text-[11px] font-bold uppercase tracking-[.14em] text-stone-400">Read</p>
+                <SidebarTab
+                  active={mode === 'paragraphs'}
+                  onClick={() => gotoView('paragraphs')}
+                  icon={<AlignLeft className="h-4 w-4" />}
+                  title="Transcript"
+                  subtitle={`${wordCount.toLocaleString()} words · ~${readMins} min`}
+                  badge={current.editedText != null ? 'Edited' : undefined}
+                />
+                <SidebarTab
+                  active={mode === 'timestamps'}
+                  onClick={() => gotoView('timestamps')}
+                  icon={<ListOrdered className="h-4 w-4" />}
+                  title="Timestamps"
+                  subtitle={`${cueCount} cues`}
+                  badge={highlightCount > 0 ? `${highlightCount} ★` : undefined}
                 />
               </div>
-            </details>
-            {mode === 'paragraphs' && !editing && (
-              <button
-                onClick={() => {
-                  setEditDraft(displayText);
-                  setEditing(true);
-                }}
-                className="inline-flex items-center gap-2 rounded-lg border border-stone-300 bg-white px-3.5 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-100"
-              >
-                <Pencil className="h-4 w-4" /> Edit transcript
-              </button>
-            )}
-            {current.editedText != null && (
-              <button
-                onClick={() => void persistMeta({ editedText: null }, 'Reverted to extracted text.')}
-                className="inline-flex items-center gap-2 rounded-lg border border-stone-300 bg-white px-3.5 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-100"
-              >
-                Revert to extracted text
-              </button>
-            )}
-          </div>
-        </div>
-      )}
+            </nav>
 
-      {/* Content */}
-      <div className="print-area print-body mt-4 rounded-xl border border-stone-200 bg-white p-4 shadow-card sm:p-6">
-        {mode === 'summary' ? (
-          <VideoSummary doc={current} />
-        ) : mode === 'paragraphs' ? (
-          editing ? (
-            <div className="no-print">
-              <textarea
-                value={editDraft}
-                onChange={(e) => setEditDraft(e.target.value)}
-                rows={14}
-                className="w-full rounded-lg border border-stone-300 p-3 font-serif text-[1.05rem] leading-relaxed outline-none focus:border-stone-900"
+          </div>
+        </aside>
+
+        {/* ============ Dedicated section ============ */}
+        <div className="min-w-0 flex-1">
+          {/* Reading progress */}
+          {inRead && (
+            <div className="no-print mb-2 h-1 overflow-hidden rounded-full bg-stone-200" aria-hidden>
+              <div className="h-full rounded-full bg-amber-500 transition-[width]" style={{ width: `${Math.round(readProgress * 100)}%` }} />
+            </div>
+          )}
+
+          {mode === 'summary' && (
+            <section aria-label="Summary" className="rounded-lg border border-stone-200/90 bg-white p-5 shadow-card sm:p-7">
+              <PanelHeader
+                icon={<Sparkles className="h-4 w-4" />}
+                tone="amber"
+                title="Summary"
+                blurb="Generated from the full transcript · cached per video"
+                center
               />
-              <div className="mt-2 flex gap-2">
-                <button
-                  onClick={saveEdit}
-                  disabled={saving}
-                  className="ui-primary"
-                >
-                  {saving ? 'Saving…' : 'Save changes'}
-                </button>
-                <button
-                  onClick={() => setEditing(false)}
-                  className="rounded-lg border border-stone-300 px-4 py-2 text-sm font-medium text-stone-700 hover:bg-stone-100"
-                >
-                  Cancel
-                </button>
+              <div className="print-area mt-4">
+                <VideoSummary doc={current} />
               </div>
-            </div>
-          ) : (
-            <p className="mx-auto max-w-[68ch] font-serif text-[1.05rem] leading-8 text-stone-800">{renderParaMatches()}</p>
-          )
-        ) : (
-          <ol className="mx-auto flex max-w-4xl flex-col gap-1.5">
-            {current.captions.map((c, i) => {
-              const highlighted = current.highlights.includes(c.start);
-              return (
-                <li
-                  key={i}
-                  ref={cueMatchIdx.includes(i) ? registerMark(cueMatchIdx.indexOf(i)) : undefined}
-                  className={cn('flex gap-3 rounded-lg px-2 py-1.5 text-[0.95rem] leading-7', highlighted && 'bg-yellow-50 ring-1 ring-yellow-200')}
-                >
-                  <button
-                    onClick={() => void openExternal(timestampUrl(current.url, c.start))}
-                    title={`Open video at ${formatMMSS(c.start)}`}
-                    className="w-12 shrink-0 select-none self-start font-mono text-[0.8rem] font-medium text-sky-700 hover:underline"
-                  >
-                    {formatMMSS(c.start)}
-                  </button>
-                  <span className="flex-1 text-stone-800">{renderCueText(c.text, i)}</span>
-                  <span className="no-print flex shrink-0 items-start gap-0.5">
-                    <button
-                      onClick={() => toggleHighlight(c.start)}
-                      title={highlighted ? 'Remove highlight' : 'Highlight this cue'}
-                      className={cn(
-                        'rounded-lg p-1 transition',
-                        highlighted ? 'text-amber-500' : 'text-stone-300 hover:text-amber-500',
-                      )}
-                    >
-                      <Bookmark className={cn('h-4 w-4', highlighted && 'fill-amber-300')} />
-                    </button>
-                    <button
-                      onClick={() => void copyText(timestampUrl(current.url, c.start)).then(() => notify('success', 'Timestamp link copied.'))}
-                      title="Copy link to this timestamp"
-                      className="rounded-lg p-1 text-stone-300 transition hover:text-stone-600"
-                    >
-                      <Link2 className="h-4 w-4" />
-                    </button>
-                  </span>
-                </li>
-              );
-            })}
-          </ol>
-        )}
-        {mode !== 'summary' && current.captions.length === 0 && (
-          <p className="text-sm text-stone-500">No timestamped cues stored for this document.</p>
-        )}
-      </div>
+            </section>
+          )}
 
-      {/* Annotations */}
-      <div className="no-print mt-4 rounded-xl border border-stone-200 bg-white p-4 shadow-card sm:p-6">
-        <h2 className="flex items-center gap-2 text-sm font-semibold text-stone-900">
-          <Pencil className="h-4 w-4" /> Notes, tags & languages
-        </h2>
-        <div className="mt-4 grid gap-6 md:grid-cols-2">
-          <div>
-            <label className="text-xs font-medium uppercase tracking-wide text-stone-500">Notes</label>
-            <textarea
-              value={notesDraft}
-              onChange={(e) => setNotesDraft(e.target.value)}
-              rows={4}
-              placeholder="Your notes on this video…"
-              className="mt-1.5 w-full rounded-lg border border-stone-300 p-2.5 text-sm outline-none placeholder:text-stone-400 focus:border-stone-900"
-            />
-            <button
-              onClick={saveNotes}
-              disabled={saving || notesDraft === current.notes}
-              className="ui-primary mt-1.5 px-3.5 py-1.5"
-            >
-              Save notes
-            </button>
-          </div>
-          <div className="space-y-6">
-            <div>
-              <label className="text-xs font-medium uppercase tracking-wide text-stone-500">Tags</label>
-              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                {current.tags.map((t) => (
-                  <span key={t} className="inline-flex items-center gap-1 bg-stone-100 px-2 py-1 text-xs font-medium text-stone-700">
-                    <Tag className="h-3 w-3" /> {t}
-                    <button onClick={() => removeTag(t)} aria-label={`Remove tag ${t}`} className="hover:text-red-600">
-                      <X className="h-3 w-3" />
-                    </button>
-                  </span>
-                ))}
-                <input
-                  value={tagInput}
-                  onChange={(e) => setTagInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ',') {
-                      e.preventDefault();
-                      addTag();
-                    }
-                  }}
-                  placeholder="+ add tag"
-                  className="w-24 rounded-lg border border-dashed border-stone-300 px-2 py-1 text-xs outline-none placeholder:text-stone-400 focus:border-stone-900"
+          {mode === 'chat' && (
+            <section aria-label="Ask this video" className="flex min-h-[540px] flex-col rounded-lg border border-stone-200/90 bg-white p-5 shadow-card sm:p-7 lg:h-[calc(100dvh-8rem)] print:h-auto">
+              <PanelHeader
+                icon={<MessageCircle className="h-4 w-4" />}
+                tone="sky"
+                title="Ask this video"
+                blurb="Answers come only from this transcript"
+              />
+              <div className="mt-2 flex min-h-0 flex-1 flex-col">
+                <VideoChat doc={current} />
+              </div>
+            </section>
+          )}
+
+          {mode === 'paragraphs' && (
+            <section aria-label="Transcript" className="overflow-hidden rounded-lg border border-stone-200/90 bg-white shadow-card">
+              <div className="border-b border-stone-100 p-4 sm:px-6">
+                <PanelHeader
+                  icon={<AlignLeft className="h-4 w-4" />}
+                  title="Transcript"
+                  blurb={`${wordCount.toLocaleString()} words · ~${readMins} min read`}
+                  actions={
+                    <>
+                      <ChipButton
+                        onClick={() => void doCopyAll(false)}
+                        icon={copied ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
+                        label={copied ? 'Copied!' : 'Copy'}
+                      />
+                      <ChipButton onClick={exportPdf} icon={<FileDown className="h-4 w-4" />} label="Export PDF" title="Open the print dialog — filename defaults to this video's title" />
+                      <span className="relative inline-flex">
+                        <ChipButton onClick={() => setMoreOpen((v) => !v)} icon={<FileText className="h-4 w-4" />} label="More" chevron />
+                        {moreOpen && (
+                          <span className="absolute right-0 top-full z-10 mt-1 w-52 overflow-hidden rounded-lg border border-stone-200 bg-white py-1 text-left shadow-lg">
+                            <MenuItem label="Copy as Markdown" onClick={() => { setMoreOpen(false); void doCopyAll(true); }} />
+                            <MenuItem label="Download .txt" onClick={() => { setMoreOpen(false); downloadTextFile(`${stem}.txt`, displayText); }} />
+                            <MenuItem
+                              label="Download .md"
+                              onClick={() => { setMoreOpen(false); downloadTextFile(`${stem}.md`, buildMarkdown(current), 'text/markdown;charset=utf-8'); }}
+                            />
+                            <MenuItem
+                              label="Download .srt"
+                              onClick={() => { setMoreOpen(false); downloadTextFile(`${stem}.srt`, buildSrt(current), 'text/plain;charset=utf-8'); }}
+                            />
+                            <MenuItem
+                              label="Download .vtt"
+                              onClick={() => { setMoreOpen(false); downloadTextFile(`${stem}.vtt`, buildVtt(current), 'text/vtt;charset=utf-8'); }}
+                            />
+                          </span>
+                        )}
+                      </span>
+                      {mode === 'paragraphs' && !editing && (
+                        <ChipButton
+                          onClick={() => { setEditDraft(displayText); setEditing(true); }}
+                          icon={<Pencil className="h-4 w-4" />}
+                          label="Edit"
+                        />
+                      )}
+                      {current.editedText != null && (
+                        <ChipButton
+                          onClick={() => void persistMeta({ editedText: null }, 'Reverted to extracted text.')}
+                          icon={<X className="h-4 w-4" />}
+                          label="Revert"
+                          title="Revert to extracted text"
+                        />
+                      )}
+                    </>
+                  }
+                />
+                <SearchField
+                  value={search}
+                  onChange={setSearch}
+                  onStep={stepMatch}
+                  matchCount={matchCount}
+                  hasQuery={q.length > 0}
                 />
               </div>
-            </div>
-            <div>
-              <label className="text-xs font-medium uppercase tracking-wide text-stone-500">Caption language</label>
-              <div className="mt-1.5">
-                {!tracks ? (
-                  <button
-                    onClick={openTracks}
-                    disabled={tracksLoading}
-                    className="inline-flex items-center gap-2 rounded-lg border border-stone-300 px-3.5 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-100 disabled:opacity-50"
-                  >
-                    <Languages className="h-4 w-4" />
-                    {tracksLoading ? 'Loading languages…' : 'Choose language'}
-                  </button>
-                ) : tracks.length === 0 ? (
-                  <p className="text-sm text-stone-500">No caption tracks found.</p>
-                ) : (
-                  <div className="flex flex-wrap gap-1.5">
-                    {tracks.map((t) => {
-                      const isCurrent = current.trackLang === t.languageCode && (current.trackKind ?? '') === (t.kind ?? '');
-                      return (
-                        <button
-                          key={`${t.languageCode}|${t.kind}`}
-                          onClick={() => void switchTrack(t.languageCode)}
-                          disabled={switchingLang != null || isCurrent}
-                          className={cn(
-                            'border px-2.5 py-1.5 text-xs font-medium transition disabled:opacity-50',
-                            isCurrent
-                              ? 'border-stone-900 bg-stone-900 text-white'
-                              : 'border-stone-300 text-stone-700 hover:bg-stone-100',
-                          )}
-                        >
-                          {switchingLang === t.languageCode ? 'Loading…' : t.label}
-                        </button>
-                      );
-                    })}
+              <div
+                ref={contentRef}
+                className="print-area print-body max-h-none overflow-visible p-4 sm:p-6 lg:max-h-[74vh] lg:overflow-y-auto"
+              >
+                {editing ? (
+                  <div className="no-print">
+                    <textarea
+                      value={editDraft}
+                      onChange={(e) => setEditDraft(e.target.value)}
+                      rows={14}
+                      className="w-full rounded-md border border-stone-300 p-3 font-serif text-[1.05rem] leading-relaxed outline-none focus:border-stone-900"
+                    />
+                    <div className="mt-2 flex gap-2">
+                      <button onClick={saveEdit} disabled={saving} className="ui-primary">
+                        {saving ? 'Saving…' : 'Save changes'}
+                      </button>
+                      <button
+                        onClick={() => setEditing(false)}
+                        className="rounded-lg border border-stone-300 px-4 py-2 text-sm font-medium text-stone-700 hover:bg-stone-100"
+                      >
+                        Cancel
+                      </button>
+                    </div>
                   </div>
+                ) : (
+                  <p className="mx-auto max-w-[68ch] font-serif text-[1.05rem] leading-8 text-stone-800">{renderParaMatches()}</p>
+                )}
+                {cueCount === 0 && !displayText.trim() && (
+                  <p className="text-sm text-stone-500">No transcript text stored for this document.</p>
                 )}
               </div>
-            </div>
-          </div>
+            </section>
+          )}
+
+          {mode === 'timestamps' && (
+            <section aria-label="Timestamps" className="overflow-hidden rounded-lg border border-stone-200/90 bg-white shadow-card">
+              <div className="border-b border-stone-100 p-4 sm:px-6">
+                <PanelHeader
+                  icon={<ListOrdered className="h-4 w-4" />}
+                  title="Timestamps"
+                  blurb={`${cueCount} cues · select a time to jump to the video`}
+                  actions={
+                    cueCount > 0 && (
+                      <>
+                        <ChipButton
+                          onClick={() => void doCopyTimestamps()}
+                          icon={tsCopied ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
+                          label={tsCopied ? 'Copied!' : 'Copy'}
+                        />
+                        <ChipButton onClick={exportPdf} icon={<FileDown className="h-4 w-4" />} label="Export PDF" title="Open the print dialog — filename defaults to this video's title" />
+                        <span className="relative inline-flex">
+                          <ChipButton onClick={() => setTsMoreOpen((v) => !v)} icon={<FileText className="h-4 w-4" />} label="More" chevron />
+                          {tsMoreOpen && (
+                            <span className="absolute right-0 top-full z-10 mt-1 w-52 overflow-hidden rounded-lg border border-stone-200 bg-white py-1 text-left shadow-lg">
+                              <MenuItem
+                                label="Download .txt"
+                                onClick={() => { setTsMoreOpen(false); downloadTextFile(`${stem}-timestamps.txt`, `${current.captions.map((c) => `[${formatMMSS(c.start)}] ${c.text}`).join('\n')}\n`); }}
+                              />
+                              <MenuItem
+                                label="Download .srt"
+                                onClick={() => { setTsMoreOpen(false); downloadTextFile(`${stem}.srt`, buildSrt(current), 'text/plain;charset=utf-8'); }}
+                              />
+                              <MenuItem
+                                label="Download .vtt"
+                                onClick={() => { setTsMoreOpen(false); downloadTextFile(`${stem}.vtt`, buildVtt(current), 'text/vtt;charset=utf-8'); }}
+                              />
+                            </span>
+                          )}
+                        </span>
+                      </>
+                    )
+                  }
+                />
+                <SearchField
+                  value={search}
+                  onChange={setSearch}
+                  onStep={stepMatch}
+                  matchCount={matchCount}
+                  hasQuery={q.length > 0}
+                />
+              </div>
+              <div
+                ref={contentRef}
+                className="print-area print-body max-h-none overflow-visible p-4 sm:p-6 lg:max-h-[74vh] lg:overflow-y-auto"
+              >
+                {cueCount === 0 ? (
+                  <p className="text-sm text-stone-500">No timestamped cues stored for this document.</p>
+                ) : (
+                  <ol className="mx-auto flex max-w-4xl flex-col gap-1.5">
+                    {current.captions.map((c, i) => {
+                      const highlighted = current.highlights.includes(c.start);
+                      return (
+                        <li
+                          key={i}
+                          ref={cueMatchIdx.includes(i) ? registerMark(cueMatchIdx.indexOf(i)) : undefined}
+                          className={cn('flex gap-3 rounded-lg px-2 py-1.5 text-[0.95rem] leading-7', highlighted && 'bg-yellow-50 ring-1 ring-yellow-200')}
+                        >
+                          <button
+                            onClick={() => void openExternal(timestampUrl(current.url, c.start))}
+                            title={`Open video at ${formatMMSS(c.start)}`}
+                            className="w-12 shrink-0 select-none self-start font-mono text-[0.8rem] font-medium text-sky-700 hover:underline"
+                          >
+                            {formatMMSS(c.start)}
+                          </button>
+                          <span className="flex-1 text-stone-800">{renderCueText(c.text, i)}</span>
+                          <span className="no-print flex shrink-0 items-start gap-0.5">
+                            <button
+                              onClick={() => toggleHighlight(c.start)}
+                              title={highlighted ? 'Remove highlight' : 'Highlight this cue'}
+                              className={cn(
+                                'rounded-md p-1 transition',
+                                highlighted ? 'text-amber-500' : 'text-stone-300 hover:text-amber-500',
+                              )}
+                            >
+                              <Bookmark className={cn('h-4 w-4', highlighted && 'fill-amber-300')} />
+                            </button>
+                            <button
+                              onClick={() => void copyText(timestampUrl(current.url, c.start)).then(() => notify('success', 'Timestamp link copied.'))}
+                              title="Copy link to this timestamp"
+                              className="rounded-md p-1 text-stone-300 transition hover:text-stone-600"
+                            >
+                              <Link2 className="h-4 w-4" />
+                            </button>
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                )}
+              </div>
+            </section>
+          )}
+
+          {mode === 'organize' && (
+            <section aria-label="Notes and tags" className="rounded-lg border border-stone-200/90 bg-white p-5 shadow-card sm:p-7">
+              <PanelHeader
+                icon={<Pencil className="h-4 w-4" />}
+                title="Notes & tags"
+                blurb="Your notes, tags and caption language — private to this video"
+              />
+              <div className="mt-4 grid gap-6 md:grid-cols-2">
+                <div>
+                  <label className="text-xs font-medium uppercase tracking-wide text-stone-500">Notes</label>
+                  <textarea
+                    value={notesDraft}
+                    onChange={(e) => setNotesDraft(e.target.value)}
+                    rows={6}
+                    placeholder="Your notes on this video…"
+                    className="mt-1.5 w-full resize-y rounded-md border border-stone-300 p-2.5 text-sm outline-none placeholder:text-stone-400 focus:border-stone-900"
+                  />
+                  <span className="mt-1.5 flex items-center gap-2">
+                    <button
+                      onClick={saveNotes}
+                      disabled={saving || !notesDirty}
+                      className="ui-primary px-3.5 py-1.5"
+                    >
+                      {saving ? 'Saving…' : 'Save notes'}
+                    </button>
+                    {notesDirty && <span className="text-[11px] font-medium text-amber-700">Unsaved changes</span>}
+                  </span>
+                </div>
+                <div className="space-y-6">
+                  <div>
+                    <label className="text-xs font-medium uppercase tracking-wide text-stone-500">Tags</label>
+                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                      {current.tags.map((t) => (
+                        <span key={t} className="inline-flex items-center gap-1 bg-stone-100 px-2 py-1 text-xs font-medium text-stone-700">
+                          <Tag className="h-3 w-3" /> {t}
+                          <button onClick={() => removeTag(t)} aria-label={`Remove tag ${t}`} className="hover:text-red-600">
+                            <X className="h-3 w-3" />
+                          </button>
+                        </span>
+                      ))}
+                      <input
+                        value={tagInput}
+                        onChange={(e) => setTagInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ',') {
+                            e.preventDefault();
+                            addTag();
+                          }
+                        }}
+                        placeholder="+ add tag"
+                        className="w-24 rounded-md border border-dashed border-stone-300 px-2 py-1 text-xs outline-none placeholder:text-stone-400 focus:border-stone-900"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium uppercase tracking-wide text-stone-500">Caption language</label>
+                    <div className="mt-1.5">
+                      {!tracks ? (
+                        <button
+                          onClick={openTracks}
+                          disabled={tracksLoading}
+                          className="inline-flex items-center gap-2 rounded-lg border border-stone-300 px-3.5 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-100 disabled:opacity-50"
+                        >
+                          <Languages className="h-4 w-4" />
+                          {tracksLoading ? 'Loading languages…' : 'Choose language'}
+                        </button>
+                      ) : tracks.length === 0 ? (
+                        <p className="text-sm text-stone-500">No caption tracks found.</p>
+                      ) : (
+                        <div className="flex flex-wrap gap-1.5">
+                          {tracks.map((t) => {
+                            const isCurrent = current.trackLang === t.languageCode && (current.trackKind ?? '') === (t.kind ?? '');
+                            return (
+                              <button
+                                key={`${t.languageCode}|${t.kind}`}
+                                onClick={() => void switchTrack(t.languageCode)}
+                                disabled={switchingLang != null || isCurrent}
+                                className={cn(
+                                  'border px-2.5 py-1.5 text-xs font-medium transition disabled:opacity-50',
+                                  isCurrent
+                                    ? 'border-stone-900 bg-stone-900 text-white'
+                                    : 'border-stone-300 text-stone-700 hover:bg-stone-100',
+                                )}
+                              >
+                                {switchingLang === t.languageCode ? 'Loading…' : t.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+          )}
         </div>
       </div>
+      </div>
     </div>
+  );
+}
+
+function SidebarTab({
+  active,
+  onClick,
+  icon,
+  title,
+  subtitle,
+  badge,
+  tone = 'default',
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  title: string;
+  subtitle: string;
+  badge?: string;
+  tone?: 'default' | 'amber' | 'sky';
+}) {
+  return (
+    <button
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className={cn(
+        'group flex items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500',
+        active ? 'bg-stone-900 text-white shadow-xs' : 'text-stone-700 hover:bg-stone-100',
+      )}
+    >
+      <span
+        className={cn(
+          'flex h-9 w-9 shrink-0 items-center justify-center rounded-md transition-transform',
+          active
+            ? tone === 'amber'
+              ? 'bg-amber-400 text-stone-950 font-bold'
+              : tone === 'sky'
+                ? 'bg-sky-400 text-stone-950 font-bold'
+                : 'bg-white/15 text-amber-300'
+            : tone === 'amber'
+              ? 'bg-amber-100 text-amber-800'
+              : tone === 'sky'
+                ? 'bg-sky-100 text-sky-800'
+                : 'bg-stone-100 text-stone-600',
+        )}
+      >
+        {icon}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-2 text-sm font-semibold">
+          {title}
+          {badge && (
+            <span className={cn('rounded-full px-1.5 py-0.2 text-[10px] font-bold', active ? 'bg-amber-400 text-stone-950' : 'bg-stone-200 text-stone-600')}>
+              {badge}
+            </span>
+          )}
+        </span>
+        <span className={cn('mt-0.5 block truncate text-xs', active ? 'text-stone-300' : 'text-stone-400')}>{subtitle}</span>
+      </span>
+      <span className={cn('h-5 w-1 shrink-0 rounded-full transition-all', active ? 'bg-amber-400' : 'bg-transparent')} aria-hidden />
+    </button>
+  );
+}
+
+function PanelHeader({
+  icon,
+  tone = 'default',
+  title,
+  blurb,
+  actions,
+  center = false,
+}: {
+  icon: React.ReactNode;
+  tone?: 'default' | 'amber' | 'sky';
+  title: string;
+  blurb: string;
+  actions?: React.ReactNode;
+  center?: boolean;
+}) {
+  if (center) {
+    return (
+      <div className="flex flex-col items-center gap-2 text-center">
+        <span
+          className={cn(
+            'flex h-10 w-10 items-center justify-center rounded-lg',
+            tone === 'amber'
+              ? 'bg-amber-100 text-amber-700'
+              : tone === 'sky'
+                ? 'bg-sky-100 text-sky-700'
+                : 'bg-stone-100 text-stone-600',
+          )}
+        >
+          {icon}
+        </span>
+        <span>
+          <span className="block text-base font-bold tracking-tight text-stone-900">{title}</span>
+          <span className="mt-0.5 block text-xs text-stone-500">{blurb}</span>
+        </span>
+        {actions && <span className="no-print flex flex-wrap items-center justify-center gap-1.5">{actions}</span>}
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <span
+        className={cn(
+          'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
+          tone === 'amber'
+            ? 'bg-amber-100 text-amber-700'
+            : tone === 'sky'
+              ? 'bg-sky-100 text-sky-700'
+              : 'bg-stone-100 text-stone-600',
+        )}
+      >
+        {icon}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-base font-bold tracking-tight text-stone-900">{title}</span>
+        <span className="mt-0.5 block truncate text-xs text-stone-500">{blurb}</span>
+      </span>
+      {actions && <span className="no-print flex flex-wrap items-center gap-1.5">{actions}</span>}
+    </div>
+  );
+}
+
+function SearchField({
+  value,
+  onChange,
+  onStep,
+  matchCount,
+  hasQuery,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  onStep: (dir: 1 | -1) => void;
+  matchCount: number;
+  hasQuery: boolean;
+}) {
+  return (
+    <div className="no-print mt-3 flex flex-wrap items-center gap-2">
+      <span className="relative min-w-40 flex-1">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" />
+        <input
+          id="reader-search"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') onStep(e.shiftKey ? -1 : 1);
+          }}
+          placeholder="Find in transcript… (Enter = next)"
+          aria-label="Search in transcript"
+          className="w-full rounded-md border border-stone-300 bg-white py-2 pl-9 pr-3 text-sm outline-none placeholder:text-stone-400 focus:border-yellow-600 focus:ring-2 focus:ring-yellow-100"
+        />
+      </span>
+      {hasQuery && (
+        <span className="inline-flex items-center gap-1 text-xs text-stone-500">
+          <span className="tabular-nums">{matchCount} {matchCount === 1 ? 'match' : 'matches'}</span>
+          <button
+            onClick={() => onStep(-1)}
+            title="Previous match (Shift+Enter)"
+            className="rounded-md border border-stone-300 bg-white p-1.5 hover:bg-stone-100"
+          >
+            <ChevronUp className="h-4 w-4" />
+          </button>
+          <button
+            onClick={() => onStep(1)}
+            title="Next match (Enter)"
+            className="rounded-md border border-stone-300 bg-white p-1.5 hover:bg-stone-100"
+          >
+            <ChevronDown className="h-4 w-4" />
+          </button>
+        </span>
+      )}
+    </div>
+  );
+}
+
+function ChipButton({
+  onClick,
+  icon,
+  label,
+  title,
+  chevron,
+}: {
+  onClick: () => void;
+  icon: React.ReactNode;
+  label: string;
+  title?: string;
+  chevron?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={title ?? label}
+      className="inline-flex items-center gap-1.5 rounded-md border border-stone-200/90 bg-white px-2.5 py-1.5 text-xs font-semibold text-stone-700 shadow-xs transition hover:border-stone-300 hover:bg-stone-50"
+    >
+      <span className="text-stone-500">{icon}</span>
+      {label}
+      {chevron && <ChevronDown className="h-3 w-3 text-stone-400" />}
+    </button>
   );
 }
 

@@ -21,6 +21,7 @@ npx wrangler kv:namespace create SUMMARY_KV
 #      AUTH_BASE_URL = your VITE_NEON_AUTH_URL
 #      JWKS_URL      = your VITE_NEON_JWKS_URL
 #      DAILY_LIMIT_PER_USER = 10
+#      CHAT_DAILY_LIMIT_PER_USER = 10  (POST /chat quota; defaults to DAILY_LIMIT_PER_USER)
 
 # 4. Store the shared key (ENCRYPTED — never in the repo)
 npx wrangler secret put OPENROUTER_API_KEY
@@ -47,8 +48,11 @@ already wired into `.github/workflows/release.yml`.
 - The key exists only as a Worker secret (encrypted at rest, never logged).
 - Every request must carry a valid, unexpired Neon Auth JWT (`sub` = user id).
   Forged/anonymous requests get 401.
-- Each user gets `DAILY_LIMIT_PER_USER` summaries/day (tracked in KV, resets
-  at UTC midnight). One abuser can't burn the shared quota.
+- Each user gets `DAILY_LIMIT_PER_USER` summaries/day and
+  `CHAT_DAILY_LIMIT_PER_USER` chats/day (defaults to the summary limit,
+  tracked in KV, resets at UTC midnight). One abuser can't burn the shared
+  quota. Quota is consumed only on upstream success — malformed requests
+  and failed models never burn quota.
 - Transcripts are capped (200k chars in, 100k forwarded) so one giant video
   can't eat the context budget.
 - If a key ever leaks or OpenRouter flags abuse: `wrangler secret put
@@ -57,8 +61,9 @@ already wired into `.github/workflows/release.yml`.
 ## Ops
 
 - Health: `GET /health` → `{ "ok": true }`
+- Endpoints: `POST /summarize` (full-transcript summary), `POST /chat` (transcript-grounded Q&A with `{ title, transcript, history, question }`)
 - Logs: `npm run tail`
-- Quota check for a user: KV key `summaries:<userId>:<YYYY-MM-DD>`.
+- Quota check for a user: KV keys `summaries:<userId>:<YYYY-MM-DD>` and `chat:<userId>:<YYYY-MM-DD>` (separate daily counters; chat defaults to `DAILY_LIMIT_PER_USER` when `CHAT_DAILY_LIMIT_PER_USER` is unset).
 - Costs: Workers free tier (100k req/day) + your OpenRouter key. Free-model
   keys share 200 req/day across ALL users — a paid key with a spending limit
   is recommended for any real user base.

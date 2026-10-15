@@ -255,11 +255,16 @@ export async function listHighlightedDocs(limit = 8): Promise<TranscriptDoc[]> {
   return rows.map(toDoc);
 }
 
+/** Recently-opened shelf size. Newest open goes first; once full, the oldest
+ *  is dropped — so the horizontal row never overflows and always reflects
+ *  open order. Sized so the cards fit a 1280px screen without scrolling. */
+export const MAX_RECENT_DOCS = 5;
+
 /** Load a user's recently opened docs in the requested order. */
 export async function listRecentDocs(ids: string[]): Promise<TranscriptDoc[]> {
   if (ids.length === 0) return [];
   const uid = requireUserId();
-  const orderedIds = ids.slice(0, 8).join(',');
+  const orderedIds = ids.slice(0, MAX_RECENT_DOCS).join(',');
   const rows = await authed<Record<string, unknown>>(
     (txn) => txn`
       select t.id::text as id, t."folderId"::text as "folderId", t."videoId" as "videoId",

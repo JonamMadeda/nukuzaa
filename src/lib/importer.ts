@@ -1,5 +1,6 @@
 import { extractTranscriptFromUrl, extractVideoId } from './extractor';
 import { findDuplicateVideo, saveTranscript } from './db';
+import { mirrorDoc } from './vault';
 import type { TranscriptDoc } from './types';
 
 export interface ImportOutcome {
@@ -39,6 +40,8 @@ export async function importVideo(folderId: string, rawUrl: string): Promise<Imp
     trackLang: data.trackLang,
     trackKind: data.trackKind,
   });
+  // Best-effort local mirror — never fails the import.
+  void mirrorDoc(saved).catch(() => {});
   const elsewhere = dupes.filter((d) => d.folderId !== folderId);
   return {
     status: 'saved',

@@ -10,7 +10,7 @@ or export as PDF.
 ## Install (recommended)
 
 1. Go to **[Releases](https://github.com/JonamMadeda/nukuzaa/releases/latest)**
-   and download **`Nukuzaa_0.3.1_x64-setup.exe`**.
+   and download **`Nukuzaa_0.4.0_x64-setup.exe`**.
 2. Double-click the setup file and follow the installer. This adds Nukuzaa to
    your Start Menu and Apps list.
 3. Open **Nukuzaa** and start saving transcripts. No accounts, no settings,
@@ -21,7 +21,7 @@ or export as PDF.
 > Click **More info → Run anyway**. The app updates itself from this GitHub
 > repo (see below), so you only need to trust this one prompt.
 
-**No-install option:** download **`Nukuzaa-0.3.1-portable.exe`** from the same
+**No-install option:** download **`Nukuzaa-0.4.0-portable.exe`** from the same
 release page and double-click it — nothing is installed.
 
 **Requirements:** Windows 10/11 64-bit and an internet connection. (WebView2
@@ -32,8 +32,9 @@ is preinstalled on modern Windows.)
 1. Click **Create New Folder** (e.g. "Machine Learning").
 2. Open the folder, paste a YouTube URL, click **Add document**.
 3. Click the saved card to read — the **Summary** tab opens first with the full
-   AI breakdown; switch to **Paragraphs** or **Timestamps** for the full text,
-   **Copy All**, or **Export PDF**.
+   AI breakdown; switch to **Ask this video** to chat with the transcript,
+   or **Paragraphs**/**Timestamps** for the full text, **Copy All**, or
+   **Export PDF**.
 
 ## Updates
 
@@ -46,11 +47,17 @@ need to revisit the releases page unless you want to.
 
 - **AI video summaries** — comprehensive TL;DR, key points, topics, takeaways,
   and quotes for every transcript, served securely per user
+- **Ask this video (AI chat)** — ask questions grounded in one transcript and
+  get streamed answers with clickable timestamps that jump to the moment
 - Folder collections with document counts, search, and grid/list views
 - Local caption extraction (runs on your machine, no datacenter blocks)
 - Dedicated reader page with summary/paragraphs/timestamps views, copy-all, and PDF export
 - Dashboard metrics: folders, documents, collections
 - Automatic database reconnection (rides out cloud cold starts)
+- **Local vault** — every folder and transcript is auto-mirrored as plain
+  files you own at `Documents/Nukuzaa/[Folder]/[Document]/`
+  (`transcript.md`, `notes.md`, `summary.md`, `meta.json`); open it from
+  Account → Local vault, or back up the whole library in one click
 
 ## For developers
 
@@ -74,4 +81,4 @@ and release process: **[docs/nukuzaa-guide.md](docs/nukuzaa-guide.md)**.
 | "No captions found" | Video has captions disabled, or auto-captions still processing |
 | Import fails | Transcripts import only in the desktop app, not a browser |
 
-Current version: **0.3.1**
+Current version: **0.4.0**

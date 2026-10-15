@@ -131,8 +131,8 @@ export default function UpdateManager() {
 
   if (phase === 'checking') {
     return (
-      <div className="fixed bottom-5 left-5 z-[90] inline-flex items-center gap-2 rounded-lg border border-stone-200 bg-white px-3.5 py-2 text-xs font-medium text-stone-600 shadow-lg">
-        <Loader2 className="h-3.5 w-3.5 animate-spin" /> Checking for updates…
+      <div className="fixed left-5 top-5 z-[90] inline-flex items-center gap-2 rounded-xl border border-stone-200/80 bg-white/95 px-3.5 py-2 text-xs font-semibold text-stone-700 shadow-floating backdrop-blur-md">
+        <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-500" /> Checking for updates…
       </div>
     );
   }
@@ -142,36 +142,36 @@ export default function UpdateManager() {
   return (
     <div className="fixed inset-0 z-[90] flex items-center justify-center p-4">
       <div
-        className="absolute inset-0 bg-stone-950/40"
+        className="absolute inset-0 bg-stone-950/40 backdrop-blur-xs transition-opacity"
         onClick={phase === 'available' || phase === 'error' ? () => setPhase('idle') : undefined}
       />
-      <div className="relative w-full max-w-md rounded-lg border border-stone-200 bg-white p-6 shadow-xl">
+      <div className="relative w-full max-w-md rounded-2xl border border-stone-200/90 bg-white p-6 shadow-floating">
         <div className="flex items-start justify-between">
-          <div className="flex items-center gap-2.5">
-            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-stone-900 text-white">
+          <div className="flex items-center gap-3">
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100 text-amber-900 shadow-xs">
               <ArrowDownToLine className="h-5 w-5" />
             </span>
             <div>
-              <h2 className="text-base font-semibold">
+              <h2 className="text-base font-bold text-stone-900">
                 {phase === 'ready'
                   ? 'Update ready to install'
                   : phase === 'error'
-                    ? 'Update failed'
+                    ? 'Update check failed'
                     : `Update available: v${update?.version ?? ''}`}
               </h2>
-              <p className="text-sm text-stone-500">
+              <p className="text-xs text-stone-500">
                 {phase === 'ready'
-                  ? 'Restart Nukuzaa to finish installing.'
+                  ? 'Restart Nukuzaa to apply the update.'
                   : phase === 'error'
                     ? 'Something went wrong — details below.'
-                    : 'A newer Nukuzaa release was published on GitHub.'}
+                    : 'A newer Nukuzaa release is available.'}
               </p>
             </div>
           </div>
           {(phase === 'available' || phase === 'error') && (
             <button
               onClick={() => setPhase('idle')}
-              className="rounded-lg p-1.5 text-stone-400 hover:bg-stone-100 hover:text-stone-700"
+              className="rounded-xl p-1.5 text-stone-400 transition hover:bg-stone-100 hover:text-stone-700"
               aria-label="Dismiss"
             >
               <X className="h-5 w-5" />
@@ -180,42 +180,42 @@ export default function UpdateManager() {
         </div>
 
         {update?.body && phase !== 'error' && (
-          <p className="mt-4 max-h-32 overflow-y-auto rounded-lg bg-stone-50 p-3 text-xs leading-relaxed text-stone-600">
+          <p className="mt-4 max-h-32 overflow-y-auto rounded-xl border border-stone-100 bg-stone-50 p-3 text-xs leading-relaxed text-stone-600">
             {update.body}
           </p>
         )}
 
         {phase === 'error' && error && (
-          <p className="mt-4 rounded-lg bg-red-50 p-3 text-xs leading-relaxed text-red-700">{error}</p>
+          <p className="mt-4 rounded-xl bg-red-50 p-3 text-xs leading-relaxed text-red-700 ring-1 ring-red-200/80">{error}</p>
         )}
         {phase === 'error' && error && isPortableFailure(error) && (
-          <p className="mt-2 rounded-lg bg-amber-50 p-3 text-xs leading-relaxed text-amber-800">
-            This looks like the portable build, which can't update itself — download the new
+          <p className="mt-2 rounded-xl bg-amber-50 p-3 text-xs leading-relaxed text-amber-800 ring-1 ring-amber-200/80">
+            This looks like the portable build, which cannot update itself automatically — download the new
             portable .exe from the releases page and replace the old file.
           </p>
         )}
 
         {phase === 'downloading' && (
           <div className="mt-4">
-            <div className="h-2 overflow-hidden rounded-lg bg-stone-100">
+            <div className="h-2 overflow-hidden rounded-full bg-stone-100">
               {pct === null ? (
-                <div className="h-full w-1/3 animate-pulse rounded-lg bg-stone-900" />
+                <div className="h-full w-1/3 animate-pulse rounded-full bg-stone-900" />
               ) : (
-                <div className="h-full rounded-lg bg-stone-900 transition-all" style={{ width: `${pct}%` }} />
+                <div className="h-full rounded-full bg-stone-900 transition-all" style={{ width: `${pct}%` }} />
               )}
             </div>
-            <p className="mt-1.5 text-xs text-stone-500">
+            <p className="mt-2 text-xs text-stone-500">
               Downloading… {formatBytes(downloaded)}
               {total ? ` of ${formatBytes(total)} (${pct}%)` : ''}
             </p>
           </div>
         )}
 
-        <div className="mt-5 flex justify-end gap-2">
+        <div className="mt-5 flex justify-end gap-2 border-t border-stone-100 pt-4">
           {(phase === 'available' || phase === 'error') && (
             <button
               onClick={() => setPhase('idle')}
-              className="rounded-lg px-4 py-2 text-sm font-medium text-stone-600 hover:bg-stone-100"
+              className="rounded-xl px-4 py-2 text-xs font-semibold text-stone-600 transition hover:bg-stone-100"
             >
               Later
             </button>

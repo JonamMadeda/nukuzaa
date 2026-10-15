@@ -14,7 +14,13 @@ compatibility_date = "2026-09-01"
 AUTH_BASE_URL = "https://ep-weathered-art-aeb3r9ef.neonauth.c-2.us-east-2.aws.neon.tech/neondb/auth"
 JWKS_URL = "https://ep-weathered-art-aeb3r9ef.neonauth.c-2.us-east-2.aws.neon.tech/neondb/auth/.well-known/jwks.json"
 PRIMARY_MODEL = "nvidia/nemotron-3-ultra-550b-a55b:free"
+# Chat favors first-token speed: nimble models answer in ~1s, the big
+# PRIMARY_MODEL above stays in the chain as the quality fallback.
+PRIMARY_CHAT_MODEL = "qwen/qwen3.8-27b:free"
 DAILY_LIMIT_PER_USER = "10"
+# Separate daily quota for POST /chat (falls back to DAILY_LIMIT_PER_USER
+# when unset, so enabling chat can't silently double shared-key spend).
+CHAT_DAILY_LIMIT_PER_USER = "10"
 
 # Daily per-user counters. Create once, then replace the id below:
 #   npx wrangler kv:namespace create SUMMARY_KV

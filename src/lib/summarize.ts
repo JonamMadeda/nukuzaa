@@ -22,7 +22,7 @@ export const SUMMARY_MODEL_PRIMARY =
 export const SUMMARY_MODEL_FALLBACKS = [
   'thinkingmachines/inkling-small:free',
   'dots-studio/dots-3-note-preview:free',
-  'openrouter/free',
+  'openrouter/auto',
 ] as const;
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
@@ -93,11 +93,18 @@ export function setKeyOverride(key: string): void {
 }
 
 function transcriptHash(text: string): string {
-  let h = 5381;
+  // cyrb53 (53-bit, public domain): far stronger than djb2-32 against
+  // accidental collisions between different transcripts of the same length.
+  let h1 = 0xdeadbeef;
+  let h2 = 0x41c6ce57;
   for (let i = 0; i < text.length; i++) {
-    h = ((h << 5) + h + text.charCodeAt(i)) | 0;
+    const ch = text.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
   }
-  return `${text.length}-${(h >>> 0).toString(16)}`;
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return `${text.length}-${(4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16)}`;
 }
 
 function entryKey(doc: TranscriptDoc, text: string, tag: string): string {
@@ -121,14 +128,54 @@ export function getCachedSummary(doc: TranscriptDoc, text: string): string | nul
   }
 }
 
+/** localStorage caps ~5MB: evict oldest summary entries first (insertion
+ *  order), keeping tiny pointer keys. Runs only when the cache grows large
+ *  or a write hits quota — summaries regenerate on demand, so eviction is
+ *  always safe. */
+function evictSummaryCache(keepNewest = 150): void {
+  try {
+    const entries: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(SUMMARY_CACHE_PREFIX) && !k.includes(':ptr:')) entries.push(k);
+    }
+    if (entries.length <= keepNewest) return;
+    // localStorage iterates in insertion order: drop the oldest first.
+    for (const k of entries.slice(0, entries.length - keepNewest)) {
+      localStorage.removeItem(k);
+    }
+  } catch {
+    /* storage unavailable — nothing to evict */
+  }
+}
+
+function isQuotaError(e: unknown): boolean {
+  return (
+    e instanceof DOMException &&
+    (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED')
+  );
+}
+
 export function setCachedSummary(doc: TranscriptDoc, text: string, summary: string, model: string): void {
   try {
     // Proxy model is server-managed — collapse to one tag per transcript.
     const tag = getProxyUrl() ? 'proxy' : model;
-    localStorage.setItem(entryKey(doc, text, tag), summary);
-    localStorage.setItem(pointerKey(doc, text), tag);
+    try {
+      localStorage.setItem(entryKey(doc, text, tag), summary);
+      localStorage.setItem(pointerKey(doc, text), tag);
+    } catch (e) {
+      if (!isQuotaError(e)) return;
+      // Full: drop the oldest ~half of cached summaries and retry once.
+      evictSummaryCache(100);
+      try {
+        localStorage.setItem(entryKey(doc, text, tag), summary);
+        localStorage.setItem(pointerKey(doc, text), tag);
+      } catch {
+        /* still full — summaries regenerate on demand */
+      }
+    }
   } catch {
-    /* quota — summaries regenerate on demand */
+    /* storage unavailable */
   }
 }
 
@@ -180,8 +227,68 @@ function buildPrompt(title: string, transcript: string, truncated: boolean): str
 }
 
 interface ChatMessage {
-  role: 'system' | 'user';
+  role: 'system' | 'user' | 'assistant';
   content: string;
+}
+
+/**
+ * Parse an OpenRouter SSE stream, forwarding the growing text as tokens
+ * arrive. Shared by summaries and chat. Resolves with the full text plus
+ * the model OpenRouter reports in the stream (null if absent).
+ */
+export async function readOpenRouterStream(
+  res: Response,
+  onToken?: (partial: string) => void,
+  signal?: AbortSignal,
+): Promise<{ text: string; model: string | null }> {
+  const reader = res.body?.getReader();
+  if (!reader) throw new SummaryError('NETWORK', 'Streaming is not supported in this browser.');
+  const decoder = new TextDecoder();
+  let buf = '';
+  let full = '';
+  let model: string | null = null;
+
+  const feed = (chunk: string) => {
+    for (const rawLine of chunk.split('\n')) {
+      const line = rawLine.trim();
+      if (!line.startsWith('data:')) continue;
+      const data = line.slice(5).trim();
+      if (!data || data === '[DONE]') continue;
+      let j: {
+        model?: string;
+        error?: { message?: string };
+        choices?: Array<{ delta?: { content?: string } }>;
+      };
+      try {
+        j = JSON.parse(data) as typeof j;
+      } catch {
+        continue; // split mid-JSON; the rest arrives in the next chunk
+      }
+      if (j.error?.message) throw new SummaryError('API', `OpenRouter error: ${j.error.message}`);
+      if (typeof j.model === 'string' && !model) model = j.model;
+      const piece = j.choices?.[0]?.delta?.content ?? '';
+      if (piece) {
+        full += piece;
+        onToken?.(full);
+      }
+    }
+  };
+
+  for (;;) {
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const idx = buf.lastIndexOf('\n');
+    if (idx !== -1) {
+      feed(buf.slice(0, idx + 1));
+      buf = buf.slice(idx + 1);
+    }
+  }
+  if (buf.trim()) feed(`${buf}\n`);
+
+  if (!full.trim()) throw new SummaryError('EMPTY', 'The model returned an empty response. Retry once.');
+  return { text: full, model };
 }
 
 async function callOpenRouter(apiKey: string, model: string, messages: ChatMessage[]): Promise<string> {
@@ -195,7 +302,14 @@ async function callOpenRouter(apiKey: string, model: string, messages: ChatMessa
         'HTTP-Referer': window.location.origin,
         'X-Title': 'Nukuzaa',
       },
-      body: JSON.stringify({ model, messages, temperature: 0.3, max_tokens: 4000 }),
+      body: JSON.stringify({
+        model,
+        messages,
+        temperature: 0.3,
+        max_tokens: 4000,
+        // Fastest provider serving this model — cuts time-to-first-token.
+        provider: { sort: 'throughput' },
+      }),
     });
   } catch (e) {
     throw new SummaryError('NETWORK', e instanceof Error ? e.message : 'Network request failed.');
@@ -234,10 +348,14 @@ async function callOpenRouter(apiKey: string, model: string, messages: ChatMessa
  *
  * Proxy configured → authenticated request to the proxy (no client key).
  * Otherwise → direct OpenRouter with the user's own key + model fallbacks.
+ *
+ * Pass `onToken` to stream: tokens render live and the promise still
+ * resolves with the full summary. Only natural completions are cached —
+ * aborted streams are not. Pass `signal` to let the user stop generation.
  */
 export async function generateVideoSummary(
   doc: TranscriptDoc,
-  opts?: { apiKey?: string; signal?: AbortSignal },
+  opts?: { apiKey?: string; signal?: AbortSignal; onToken?: (partial: string) => void },
 ): Promise<{ summary: string; model: string; truncated: boolean; fromCache: boolean }> {
   const text = docDisplayText(doc).trim();
   if (!text) throw new SummaryError('EMPTY', 'This transcript has no text to summarize yet.');
@@ -246,9 +364,9 @@ export async function generateVideoSummary(
   if (cached) return { summary: cached, model: 'cache', truncated: false, fromCache: true };
 
   const proxy = getProxyUrl();
-  if (proxy) return requestViaProxy(proxy, doc, text, opts?.signal);
+  if (proxy) return requestViaProxy(proxy, doc, text, opts);
 
-  return requestDirect(doc, text, opts?.apiKey);
+  return requestDirect(doc, text, opts);
 }
 
 /** Proxy path: JWT-authenticated, key stays server-side. */
@@ -256,8 +374,10 @@ async function requestViaProxy(
   proxy: string,
   doc: TranscriptDoc,
   text: string,
-  signal?: AbortSignal,
+  opts?: { signal?: AbortSignal; onToken?: (partial: string) => void },
 ): Promise<{ summary: string; model: string; truncated: boolean; fromCache: boolean }> {
+  const signal = opts?.signal;
+  const stream = typeof opts?.onToken === 'function';
   let token: string;
   try {
     token = await getAuthToken();
@@ -272,11 +392,19 @@ async function requestViaProxy(
       method: 'POST',
       signal,
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: doc.title.slice(0, 300), transcript: clipped }),
+      body: JSON.stringify({ title: doc.title.slice(0, 300), transcript: clipped, ...(stream ? { stream: true } : {}) }),
     });
   } catch (e) {
-    if (e instanceof DOMException && e.name === 'AbortError') throw new SummaryError('NETWORK', 'Summary cancelled.');
+    if (e instanceof DOMException && e.name === 'AbortError') throw e;
     throw new SummaryError('NETWORK', e instanceof Error ? e.message : 'Could not reach the summary service.');
+  }
+
+  const contentType = res.headers.get('content-type') ?? '';
+  if (stream && res.ok && contentType.includes('text/event-stream') && res.body) {
+    const out = await readOpenRouterStream(res, opts?.onToken, signal);
+    const summary = out.text.trim();
+    setCachedSummary(doc, text, summary, out.model ?? 'proxy');
+    return { summary, model: out.model ?? 'proxy', truncated: false, fromCache: false };
   }
 
   let body: { summary?: string; model?: string; truncated?: boolean; error?: string } = {};
@@ -298,13 +426,63 @@ async function requestViaProxy(
   return { summary: body.summary.trim(), model: body.model ?? 'proxy', truncated: body.truncated ?? false, fromCache: false };
 }
 
+async function callOpenRouterStream(
+  apiKey: string,
+  model: string,
+  messages: ChatMessage[],
+  onToken: (partial: string) => void,
+  signal?: AbortSignal,
+): Promise<{ text: string; model: string }> {
+  let res: Response;
+  try {
+    res = await fetch(OPENROUTER_URL, {
+      method: 'POST',
+      signal,
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': window.location.origin,
+        'X-Title': 'Nukuzaa',
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        temperature: 0.3,
+        max_tokens: 4000,
+        stream: true,
+        provider: { sort: 'throughput' },
+      }),
+    });
+  } catch (e) {
+    if (e instanceof DOMException && e.name === 'AbortError') throw e;
+    throw new SummaryError('NETWORK', e instanceof Error ? e.message : 'Network request failed.');
+  }
+  if (!res.ok || !res.body) {
+    let text = '';
+    try {
+      text = await res.text();
+    } catch {
+      /* ignore */
+    }
+    if (res.status === 401 || res.status === 403) {
+      throw new SummaryError('MISSING_KEY', 'OpenRouter rejected the API key (invalid or revoked). Check VITE_OPENROUTER_API_KEY.');
+    }
+    if (res.status === 429) {
+      throw new SummaryError('RATE_LIMIT', 'Free-model rate limit hit (20 req/min, 200/day). Wait a minute and retry.');
+    }
+    throw new SummaryError('API', `OpenRouter error: HTTP ${res.status}${text ? ` — ${text.slice(0, 200)}` : '.'}`);
+  }
+  const out = await readOpenRouterStream(res, onToken, signal);
+  return { text: out.text, model: out.model ?? model };
+}
+
 /** Direct path: user's own OpenRouter key, primary model + fallbacks. */
 async function requestDirect(
   doc: TranscriptDoc,
   text: string,
-  apiKeyOverride?: string,
+  opts?: { apiKey?: string; signal?: AbortSignal; onToken?: (partial: string) => void },
 ): Promise<{ summary: string; model: string; truncated: boolean; fromCache: boolean }> {
-  const apiKey = apiKeyOverride?.trim() || getConfiguredApiKey();
+  const apiKey = opts?.apiKey?.trim() || getConfiguredApiKey();
   if (!apiKey) {
     throw new SummaryError(
       'MISSING_KEY',
@@ -325,12 +503,20 @@ async function requestDirect(
   let lastError: SummaryError | null = null;
   for (const model of models) {
     try {
+      if (opts?.onToken) {
+        const out = await callOpenRouterStream(apiKey, model, messages, opts.onToken, opts.signal);
+        setCachedSummary(doc, text, out.text, out.model);
+        return { summary: out.text, model: out.model, truncated, fromCache: false };
+      }
       const summary = await callOpenRouter(apiKey, model, messages);
       setCachedSummary(doc, text, summary, model);
       return { summary, model, truncated, fromCache: false };
     } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') throw e;
       const err = e instanceof SummaryError ? e : new SummaryError('API', String(e));
-      // Wrong key won't heal by trying another model.
+      // Wrong key won't heal by trying another model. Every other failure
+      // (429, 404/removed model id, 400 context overflow, 5xx) falls through
+      // to the next fallback.
       if (err.code === 'MISSING_KEY') throw err;
       lastError = err;
     }

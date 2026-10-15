@@ -4,6 +4,15 @@
 
 :root {
   color-scheme: light;
+  --ink: #1c1917;
+  --ink-secondary: #57534e;
+  --ink-muted: #78716c;
+  --canvas: #fbfbfa;
+  --surface: #ffffff;
+  --line: #e7e5e4;
+  --line-subtle: #f5f5f4;
+  --brand: #f59e0b;
+  --brand-dark: #d97706;
 }
 
 html,
@@ -13,21 +22,35 @@ body,
 }
 
 body {
-  @apply bg-[#f7f6f2] text-stone-900 antialiased;
+  @apply antialiased font-sans;
+  background: var(--canvas);
+  color: var(--ink);
 }
 
 @layer components {
   .ui-primary {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-yellow-400 px-4 py-2.5 text-sm font-semibold text-stone-950 shadow-sm transition hover:bg-yellow-500 hover:shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-700 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-2 rounded-md bg-stone-900 px-3.5 py-2 text-sm font-semibold text-white shadow-sm transition-all duration-150 hover:bg-stone-800 hover:shadow active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .ui-primary-amber {
+    @apply inline-flex items-center justify-center gap-2 rounded-md bg-amber-400 px-3.5 py-2 text-sm font-semibold text-stone-950 shadow-sm transition-all duration-150 hover:bg-amber-300 hover:shadow-md hover:shadow-amber-500/15 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50;
   }
 
   .ui-secondary {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-stone-300 bg-white px-4 py-2.5 text-sm font-medium text-stone-700 transition hover:border-stone-400 hover:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-700 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-2 rounded-md border border-stone-200/90 bg-white px-3.5 py-2 text-sm font-medium text-stone-700 shadow-xs transition-all duration-150 hover:border-stone-300 hover:bg-stone-50 hover:text-stone-900 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .ui-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-stone-600 transition-colors duration-150 hover:bg-stone-100 hover:text-stone-900 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50;
   }
 
   .ui-field {
-    @apply rounded-lg border border-stone-300 bg-white text-sm text-stone-900 outline-none placeholder:text-stone-500 focus:border-yellow-600 focus:ring-2 focus:ring-yellow-100 disabled:bg-stone-50;
+    @apply rounded-md border border-stone-200 bg-white text-sm text-stone-900 outline-none transition-all placeholder:text-stone-400 focus:border-stone-400 focus:ring-2 focus:ring-stone-200/60 disabled:bg-stone-50 disabled:text-stone-400;
   }
+}
+
+input:not([type='checkbox']), select, textarea {
+  border-radius: 0.375rem;
 }
 
 button,
@@ -38,13 +61,13 @@ textarea {
 }
 
 :focus-visible {
-  outline: 2px solid #a16207;
+  outline: 2px solid #d97706;
   outline-offset: 2px;
 }
 
 ::selection {
   background: #fef08a;
-  color: #292524;
+  color: #1c1917;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -80,15 +103,22 @@ textarea {
   animation: toast-in 0.18s ease-out;
 }
 
-/* Export PDF: isolate the reader transcript on the printed page.
-   The modal toolbar/header/backdrop are .no-print; the .print-area panel
-   (with its .print-body scroll region) is expanded to full height. */
+/* Export PDF: isolate the reader content on a clean printed page.
+ *
+ * - `@page { margin: 0 }` suppresses the browser's own header/footer
+ *   (page URL like localhost:1420, date, page numbers) in Chromium,
+ *   WebView2 and Firefox. Our own padding on .print-area acts as the
+ *   page margin instead — so the PDF has no footer at all.
+ * - Screen-only chrome is .no-print; each reader panel marks its content
+ *   .print-area (only the active panel is mounted, so only it prints). */
 @media print {
   @page {
-    margin: 15mm;
+    size: auto;
+    margin: 0;
   }
+  html,
   body {
-    background: #fff;
+    background: #fff !important;
   }
   body * {
     visibility: hidden;
@@ -109,15 +139,74 @@ textarea {
     max-width: none !important;
     max-height: none !important;
     overflow: visible !important;
+    border: 0 !important;
     border-radius: 0 !important;
     box-shadow: none !important;
+    background: #fff !important;
+    color: #000 !important;
+    padding: 14mm 14mm 18mm !important;
   }
   .print-area .print-body {
     overflow: visible !important;
     max-height: none !important;
   }
+  /* Calm screen colors down to print-friendly black-on-white. */
+  .print-area a,
+  .print-area button,
+  .print-area p,
+  .print-area li,
+  .print-area span,
+  .print-area h1,
+  .print-area h2,
+  .print-area h3 {
+    color: #000 !important;
+    text-shadow: none !important;
+  }
+  .print-area a,
+  .print-area button {
+    text-decoration: none !important;
+  }
+  .print-area mark {
+    background: none !important;
+    color: inherit !important;
+  }
+  /* Readable long-form type. */
+  .print-area p {
+    orphans: 3;
+    widows: 3;
+  }
+  .print-area h1,
+  .print-area h2,
+  .print-area h3 {
+    break-after: avoid;
+  }
+  /* Timestamps: hairline separators + no split cues. */
   .print-area li {
     break-inside: avoid;
+    border-bottom: 1px solid #e5e5e5;
+  }
+  .print-area li:last-child {
+    border-bottom: 0;
+  }
+  .print-area img {
+    max-width: 100% !important;
+  }
+  /* Summary sheets print as one flowing document, not fixed boxes. */
+  .print-area .page-sheet {
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    background: #fff !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 0 8mm !important;
+  }
+  .print-area .page-sheet:last-child {
+    margin-bottom: 0 !important;
+  }
+  .print-area .page-foot {
+    display: none !important;
   }
   .no-print {
     display: none !important;

@@ -9,12 +9,14 @@ import ShortcutsModal from './components/ShortcutsModal';
 import UpdateManager, { CHECK_UPDATES_EVENT } from './components/UpdateManager';
 import { ToastProvider, useToast } from './hooks/useToast';
 import { authClient, SESSION_EXPIRED_EVENT, clearTokenCache, setCurrentUser } from './lib/auth';
+import { ensureFolder, forgetFolder, relocateFolder } from './lib/vault';
 import {
   checkConnection,
   createFolder,
   deleteFolder,
   getDbHost,
   listFoldersWithCounts,
+  MAX_RECENT_DOCS,
   resetDbClient,
   updateFolder,
 } from './lib/db';
@@ -63,7 +65,7 @@ function Shell() {
     }
     try {
       const stored = JSON.parse(localStorage.getItem(`nukuzaa:recent:${userId}`) ?? '[]');
-      setRecentDocIds(Array.isArray(stored) ? stored.filter((id): id is string => typeof id === 'string').slice(0, 8) : []);
+      setRecentDocIds(Array.isArray(stored) ? stored.filter((id): id is string => typeof id === 'string').slice(0, MAX_RECENT_DOCS) : []);
     } catch {
       setRecentDocIds([]);
     }
@@ -74,7 +76,7 @@ function Shell() {
     setReaderOrigin(origin);
     setView({ name: 'reader' });
     setRecentDocIds((previous) => {
-      const next = [doc.id, ...previous.filter((id) => id !== doc.id)].slice(0, 8);
+      const next = [doc.id, ...previous.filter((id) => id !== doc.id)].slice(0, MAX_RECENT_DOCS);
       if (userId) {
         try {
           localStorage.setItem(`nukuzaa:recent:${userId}`, JSON.stringify(next));
@@ -240,10 +242,10 @@ function Shell() {
       if (typing || e.ctrlKey || e.metaKey || e.altKey || !userId) return;
       if (e.key === '/') {
         e.preventDefault();
-        const el = document.getElementById(
-          view.name === 'workspace' ? 'workspace-url' : view.name === 'reader' ? 'reader-search' : 'dashboard-search',
-        );
-        // The reader hides its search box in Summary mode — only focus a
+        const targetId =
+          view.name === 'workspace' ? 'workspace-url' : view.name === 'reader' ? 'reader-search' : 'dashboard-search';
+        const el = document.getElementById(targetId) ?? document.getElementById('reader-chat');
+        // The reader hides its search box in Summary/Chat modes — only focus a
         // visible input, otherwise the shortcut silently does nothing.
         if (el instanceof HTMLElement && el.offsetParent !== null) el.focus();
       } else if (e.key === 'n' && view.name === 'dashboard') {
@@ -263,6 +265,7 @@ function Shell() {
       setFolders((prev) => [f, ...prev]);
       setCreateOpen(false);
       notify('success', `Folder “${f.title}” created.`);
+      void ensureFolder(f.title).catch(() => {});
     } catch (e) {
       notify('error', friendlyDbError(e));
     } finally {
@@ -272,11 +275,15 @@ function Shell() {
 
   const handleSaveFolderEdit = async (id: string, title: string, accent: FolderAccent) => {
     setCreating(true);
+    const oldTitle = folders.find((f) => f.id === id)?.title;
     try {
       await updateFolder(id, { title, accent });
       setFolders((prev) => prev.map((f) => (f.id === id ? { ...f, title: title.trim(), accent } : f)));
       setEditingFolder(null);
       notify('success', 'Folder updated.');
+      if (oldTitle && oldTitle !== title.trim()) {
+        void relocateFolder(oldTitle, title.trim()).catch(() => {});
+      }
     } catch (e) {
       notify('error', friendlyDbError(e));
     } finally {
@@ -297,6 +304,7 @@ function Shell() {
       setFolders((prev) => prev.filter((x) => x.id !== f.id));
       if (view.name === 'workspace' && view.folder.id === f.id) setView({ name: 'dashboard' });
       notify('success', 'Folder deleted.');
+      void forgetFolder(f.title).catch(() => {});
     } catch (e) {
       notify('error', friendlyDbError(e));
     }
@@ -369,12 +377,18 @@ function Shell() {
 
   return (
     <div className="flex min-h-full flex-col">
-      <Header
-        status={status}
-        onRetry={() => void loadFolders()}
-        autoRetrying={autoRetrying}
-        onOpenAccount={() => setView({ name: 'account' })}
-      />
+      {/* The reader is full-bleed: it has its own back button, so the global
+          header stays on dashboard / workspace / account only. */}
+      {view.name !== 'reader' && (
+        <Header
+          status={status}
+          onRetry={() => void loadFolders()}
+          autoRetrying={autoRetrying}
+          onOpenAccount={() => setView({ name: 'account' })}
+          onOpenShortcuts={() => setShortcutsOpen(true)}
+          userEmail={userEmail}
+        />
+      )}
 
       <main className="flex-1">
         {view.name === 'account' ? (
@@ -408,23 +422,32 @@ function Shell() {
         )}
       </main>
 
-      <footer className="mt-auto flex flex-wrap items-center justify-center gap-x-2 gap-y-1 border-t border-stone-200 px-4 py-3 text-center text-[11px] text-stone-500 sm:text-xs">
-        <span>Nukuzaa{appVersion ? ` v${appVersion}` : ''} · transcripts on your device · private to your account</span>
-        <span aria-hidden>·</span>
-        <button
-          onClick={() => window.dispatchEvent(new Event(CHECK_UPDATES_EVENT))}
-          className="font-medium text-stone-500 underline decoration-dotted underline-offset-2 hover:text-stone-800"
-        >
-          Check for updates
-        </button>
-        <span aria-hidden>·</span>
-        <button
-          onClick={() => setShortcutsOpen(true)}
-          title="Keyboard shortcuts (?)"
-          className="font-medium text-stone-500 underline decoration-dotted underline-offset-2 hover:text-stone-800"
-        >
-          Shortcuts
-        </button>
+      <footer className="mt-auto border-t border-stone-200 px-4 py-3 text-[11px] text-stone-500 sm:text-xs">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-center gap-x-3 gap-y-1 text-center">
+          <span className="inline-flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
+            <span className="whitespace-nowrap font-medium">
+              Nukuzaa{appVersion ? ` v${appVersion}` : ''}
+            </span>
+            <span aria-hidden className="text-stone-300">·</span>
+            <span>transcripts on your device · private to your account</span>
+          </span>
+          <span className="inline-flex items-center gap-x-3">
+            <button
+              onClick={() => window.dispatchEvent(new Event(CHECK_UPDATES_EVENT))}
+              className="whitespace-nowrap font-medium text-stone-500 underline decoration-dotted underline-offset-2 hover:text-stone-800"
+            >
+              Check for updates
+            </button>
+            <span aria-hidden className="text-stone-300">·</span>
+            <button
+              onClick={() => setShortcutsOpen(true)}
+              title="Keyboard shortcuts (?)"
+              className="whitespace-nowrap font-medium text-stone-500 underline decoration-dotted underline-offset-2 hover:text-stone-800"
+            >
+              Shortcuts
+            </button>
+          </span>
+        </div>
       </footer>
 
       <CreateFolderModal

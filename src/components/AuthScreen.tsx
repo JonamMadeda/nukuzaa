@@ -105,26 +105,28 @@ export default function AuthScreen() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-stone-100 px-4">
-      <div className="w-full max-w-sm rounded-lg border border-stone-200 bg-white p-8 shadow-card">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-stone-50/80 px-4 py-10">
+      <div className="pointer-events-none absolute -right-24 -top-32 h-80 w-80 rounded-full bg-amber-200/30 blur-3xl" />
+      <div className="pointer-events-none absolute -bottom-32 -left-24 h-80 w-80 rounded-full bg-stone-200/50 blur-3xl" />
+      <div className="relative w-full max-w-md rounded-2xl border border-stone-200/90 bg-white p-7 shadow-floating sm:p-9">
         <div className="flex flex-col items-center text-center">
-          <span className="flex h-12 w-12 items-center justify-center rounded-lg bg-stone-900 text-white">
-            <Captions className="h-6 w-6" />
+          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-300 via-amber-400 to-amber-500 text-stone-950 shadow-sm ring-1 ring-amber-400/30">
+            <Captions className="h-6 w-6 stroke-[2.2]" />
           </span>
-          <h1 className="mt-4 text-2xl font-bold tracking-tight">Nukuzaa</h1>
-          <p className="mt-1 text-sm text-stone-500">
-            {mode === 'signin' ? 'Welcome back — sign in to your transcripts.' : 'Create an account to keep transcripts private.'}
+          <h1 className="mt-4 text-2xl font-bold tracking-tight text-stone-900">Nukuzaa</h1>
+          <p className="mt-1.5 max-w-xs text-xs leading-5 text-stone-500">
+            {mode === 'signin' ? 'Welcome back. Access your transcripts and notes.' : 'Create your private library for video knowledge.'}
           </p>
         </div>
 
-        <div className="mt-6 grid grid-cols-2 gap-1 rounded-lg bg-stone-100 p-1 text-sm font-medium">
+        <div className="mt-6 grid grid-cols-2 gap-1 rounded-xl bg-stone-100 p-1 text-xs font-semibold">
           {(['signin', 'signup'] as Mode[]).map((m) => (
             <button
               key={m}
               onClick={() => { setMode(m); setError(null); }}
               className={cn(
                 'rounded-lg py-2 transition',
-                mode === m ? 'bg-white text-stone-900 shadow-sm' : 'text-stone-500 hover:text-stone-800',
+                mode === m ? 'bg-white text-stone-900 shadow-xs' : 'text-stone-500 hover:text-stone-800',
               )}
             >
               {m === 'signin' ? 'Sign in' : 'Create account'}
@@ -139,7 +141,7 @@ export default function AuthScreen() {
               onChange={(e) => setName(e.target.value)}
               placeholder="Display name (optional)"
               autoComplete="name"
-              className="w-full rounded-lg border border-stone-300 px-4 py-2.5 text-sm outline-none placeholder:text-stone-400 focus:border-stone-900 focus:ring-2 focus:ring-stone-200"
+              className="w-full rounded-xl border border-stone-200 px-3.5 py-2.5 text-sm text-stone-900 outline-none transition placeholder:text-stone-400 focus:border-stone-400 focus:ring-2 focus:ring-stone-200/60"
             />
           )}
           <input
@@ -149,7 +151,7 @@ export default function AuthScreen() {
             placeholder="Email address"
             type="email"
             autoComplete="email"
-            className="w-full rounded-lg border border-stone-300 px-4 py-2.5 text-sm outline-none placeholder:text-stone-400 focus:border-stone-900 focus:ring-2 focus:ring-stone-200"
+            className="w-full rounded-xl border border-stone-200 px-3.5 py-2.5 text-sm text-stone-900 outline-none transition placeholder:text-stone-400 focus:border-stone-400 focus:ring-2 focus:ring-stone-200/60"
           />
           <input
             value={password}
@@ -158,18 +160,18 @@ export default function AuthScreen() {
             placeholder={mode === 'signup' ? 'Password (min 8 characters)' : 'Password'}
             type="password"
             autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
-            className="w-full rounded-lg border border-stone-300 px-4 py-2.5 text-sm outline-none placeholder:text-stone-400 focus:border-stone-900 focus:ring-2 focus:ring-stone-200"
+            className="w-full rounded-xl border border-stone-200 px-3.5 py-2.5 text-sm text-stone-900 outline-none transition placeholder:text-stone-400 focus:border-stone-400 focus:ring-2 focus:ring-stone-200/60"
           />
         </div>
 
         {error && (
-          <p className="mt-3 rounded-lg bg-red-50 px-4 py-2.5 text-sm text-red-700 ring-1 ring-red-200">{error}</p>
+          <p className="mt-3 rounded-xl bg-red-50 px-3.5 py-2.5 text-xs text-red-700 ring-1 ring-red-200/80">{error}</p>
         )}
 
         <button
           onClick={() => void submit()}
           disabled={busy}
-          className="ui-primary mt-4 w-full"
+          className="ui-primary mt-5 h-10 w-full text-xs font-semibold"
         >
           {busy && <Loader2 className="h-4 w-4 animate-spin" />}
           {busy ? 'Please wait…' : mode === 'signin' ? 'Sign in' : 'Create account'}

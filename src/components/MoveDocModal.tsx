@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { FolderInput, Loader2, X } from 'lucide-react';
 import type { Folder, TranscriptDoc } from '../lib/types';
-import { cn } from '../lib/utils';
 
 interface Props {
   doc: TranscriptDoc | null;
@@ -30,20 +29,23 @@ export default function MoveDocModal({ doc, folders, onClose, onMove }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-stone-950/50" onClick={busyId ? undefined : onClose} />
-      <div className="relative w-full max-w-md overflow-hidden rounded-lg border border-stone-200 bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-stone-200 p-5">
-          <div className="flex items-center gap-2.5">
-            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-stone-900 text-white">
+      <div className="absolute inset-0 bg-stone-950/40 backdrop-blur-xs transition-opacity" onClick={busyId ? undefined : onClose} />
+      <div className="relative w-full max-w-md overflow-hidden rounded-2xl border border-stone-200/90 bg-white shadow-floating">
+        <div className="flex items-center justify-between border-b border-stone-100 p-5">
+          <div className="flex items-center gap-3">
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100 text-amber-900 shadow-xs">
               <FolderInput className="h-5 w-5" />
             </span>
-            <h2 className="font-semibold">Move document</h2>
+            <div>
+              <h2 className="text-base font-bold text-stone-900">Move transcript</h2>
+              <p className="text-xs text-stone-500">Relocate to another collection</p>
+            </div>
           </div>
           {!busyId && (
             <button
               onClick={onClose}
               aria-label="Close move dialog"
-              className="rounded-lg p-1.5 text-stone-400 hover:bg-stone-100 hover:text-stone-700"
+              className="rounded-xl p-1.5 text-stone-400 transition hover:bg-stone-100 hover:text-stone-700"
             >
               <X className="h-5 w-5" />
             </button>
@@ -51,34 +53,36 @@ export default function MoveDocModal({ doc, folders, onClose, onMove }: Props) {
         </div>
 
         <div className="p-5">
-          <p className="truncate text-sm text-stone-500" title={doc.title}>
-            “{doc.title}”
+          <p className="truncate text-xs font-medium text-stone-500" title={doc.title}>
+            Document: <span className="text-stone-800 font-semibold">“{doc.title}”</span>
           </p>
           {targets.length === 0 ? (
-            <p className="mt-3 text-sm text-stone-500">No other folders yet — create one first.</p>
+            <p className="mt-4 rounded-xl bg-stone-50 p-4 text-center text-xs text-stone-500">
+              No other collections available yet — create one first.
+            </p>
           ) : (
-            <ul className="nice-scroll mt-3 flex max-h-64 flex-col gap-1.5 overflow-y-auto">
+            <ul className="nice-scroll mt-3 flex max-h-64 flex-col gap-2 overflow-y-auto pr-0.5">
               {targets.map((f) => (
-                <li key={f.id} className="border border-stone-200">
+                <li key={f.id} className="overflow-hidden rounded-xl border border-stone-200/80 bg-white transition hover:border-stone-300">
                   {conflictFolder === f.id ? (
-                    <div className="px-3 py-2.5">
-                      <p className="text-sm text-stone-700">
+                    <div className="bg-amber-50/60 p-3">
+                      <p className="text-xs text-stone-700">
                         “{f.title}” already has this video. Replace it with this copy?
                       </p>
-                      <div className="mt-2 flex gap-2">
+                      <div className="mt-2.5 flex gap-2">
                         <button
                           onClick={() => {
                             setConflictFolder(null);
                             void choose(f.id, true);
                           }}
                           disabled={busyId != null}
-                          className="rounded-lg bg-red-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-600 disabled:opacity-50"
+                          className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-red-500 disabled:opacity-50"
                         >
                           Replace
                         </button>
                         <button
                           onClick={() => setConflictFolder(null)}
-                          className="rounded-lg border border-stone-300 px-3 py-1.5 text-xs font-medium text-stone-700 hover:bg-stone-100"
+                          className="ui-secondary px-3 py-1.5 text-xs"
                         >
                           Keep both
                         </button>
@@ -88,13 +92,11 @@ export default function MoveDocModal({ doc, folders, onClose, onMove }: Props) {
                     <button
                       onClick={() => void choose(f.id, false)}
                       disabled={busyId != null}
-                      className={cn(
-                        'flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left text-sm transition hover:bg-stone-50 disabled:opacity-50',
-                      )}
+                      className="flex w-full items-center justify-between gap-3 px-3.5 py-2.5 text-left text-sm transition hover:bg-stone-50 disabled:opacity-50"
                     >
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate font-medium">{f.title}</span>
-                        <span className="block text-xs text-stone-500">
+                        <span className="block truncate font-semibold text-stone-900">{f.title}</span>
+                        <span className="block text-xs text-stone-400">
                           {f.docCount} {f.docCount === 1 ? 'document' : 'documents'}
                         </span>
                       </span>
