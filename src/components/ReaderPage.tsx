@@ -267,7 +267,8 @@ export default function ReaderPage({ doc, originFolder, onBack, onDocUpdated }: 
   const exportPdf = () => {
     // Save-as-PDF inherits document.title as the suggested filename.
     const prev = document.title;
-    document.title = stem;
+    const suffix = mode === 'timestamps' ? '-timestamps' : mode === 'summary' ? '-summary' : '';
+    document.title = `${stem}${suffix}`;
     const restore = () => {
       document.title = prev;
       window.removeEventListener('afterprint', restore);
@@ -428,21 +429,42 @@ export default function ReaderPage({ doc, originFolder, onBack, onDocUpdated }: 
           </button>
         </div>
       </div>
-      <div className="mx-auto max-w-7xl px-4 pb-6 pt-4 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl px-4 pb-6 pt-4 sm:px-6 lg:px-8 print:max-w-none print:p-0 print:m-0">
 
-      {/* Print-only title block (screen: hidden, print: shown) */}
-      <div className="print-area hidden border-b-2 border-stone-900 px-1 pb-3 pt-2 print:block">
-        <h1 className="text-2xl font-bold leading-snug text-black">{current.title}</h1>
-        <p className="mt-1 break-all text-xs text-stone-600">{current.url}</p>
-        <p className="mt-1 text-xs text-stone-500">
-          Exported from Nukuzaa on{' '}
-          {new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })} ·{' '}
-          {cueCount} cues · {mode === 'paragraphs' ? 'transcript' : mode === 'timestamps' ? 'timestamps' : mode === 'chat' ? 'chat' : mode === 'organize' ? 'notes & tags' : 'summary'}
-        </p>
+      {/* Print-only publication header */}
+      <div className="hidden print:block pb-6 mb-8 border-b border-stone-200">
+        <div className="flex items-center justify-between gap-4 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="font-semibold tracking-widest uppercase text-[10px] text-stone-400">NUKUZAA</span>
+            <span className="text-stone-300">/</span>
+            <span className="inline-flex items-center rounded-sm bg-stone-100 px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase text-stone-700">
+              {mode === 'summary' ? 'AI Summary' : mode === 'timestamps' ? 'Timestamps' : mode === 'chat' ? 'Chat Transcript' : mode === 'organize' ? 'Notes & Tags' : 'Transcript'}
+            </span>
+          </div>
+          <span className="text-[11px] tabular-nums text-stone-400">
+            {new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
+          </span>
+        </div>
+        <h1 className="mt-3 text-2xl font-bold tracking-tight text-stone-900 leading-snug">
+          {current.title}
+        </h1>
+        <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-stone-500">
+          <span className="break-all font-mono text-[11px] text-stone-600">{current.url}</span>
+          <span className="text-stone-300">·</span>
+          <span>{wordCount.toLocaleString()} words</span>
+          <span className="text-stone-300">·</span>
+          <span>~{readMins} min read</span>
+          {cueCount > 0 && (
+            <>
+              <span className="text-stone-300">·</span>
+              <span>{cueCount} cues</span>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Sidebar + content */}
-      <div className="mt-2 flex flex-col gap-3 lg:flex-row lg:items-start">
+      <div className="mt-2 flex flex-col gap-3 lg:flex-row lg:items-start print:block print:m-0 print:p-0">
         {/* ============ Sidebar ============ */}
         <aside className="no-print w-full shrink-0 lg:w-72">
           <div className="flex flex-col gap-3 lg:sticky lg:top-4">
@@ -499,7 +521,7 @@ export default function ReaderPage({ doc, originFolder, onBack, onDocUpdated }: 
         </aside>
 
         {/* ============ Dedicated section ============ */}
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 print:block print:w-full print:m-0 print:p-0">
           {/* Reading progress */}
           {inRead && (
             <div className="no-print mb-2 h-1 overflow-hidden rounded-full bg-stone-200" aria-hidden>
@@ -508,15 +530,17 @@ export default function ReaderPage({ doc, originFolder, onBack, onDocUpdated }: 
           )}
 
           {mode === 'summary' && (
-            <section aria-label="Summary" className="rounded-lg border border-stone-200/90 bg-white p-5 shadow-card sm:p-7">
-              <PanelHeader
-                icon={<Sparkles className="h-4 w-4" />}
-                tone="amber"
-                title="Summary"
-                blurb="Generated from the full transcript · cached per video"
-                center
-              />
-              <div className="print-area mt-4">
+            <section aria-label="Summary" className="rounded-lg border border-stone-200/90 bg-white p-5 shadow-card sm:p-7 print:border-0 print:shadow-none print:p-0 print:bg-transparent">
+              <div className="no-print">
+                <PanelHeader
+                  icon={<Sparkles className="h-4 w-4" />}
+                  tone="amber"
+                  title="Summary"
+                  blurb="Generated from the full transcript · cached per video"
+                  center
+                />
+              </div>
+              <div className="print-area mt-4 print:mt-0">
                 <VideoSummary doc={current} />
               </div>
             </section>
@@ -537,8 +561,8 @@ export default function ReaderPage({ doc, originFolder, onBack, onDocUpdated }: 
           )}
 
           {mode === 'paragraphs' && (
-            <section aria-label="Transcript" className="overflow-hidden rounded-lg border border-stone-200/90 bg-white shadow-card">
-              <div className="border-b border-stone-100 p-4 sm:px-6">
+            <section aria-label="Transcript" className="overflow-hidden rounded-lg border border-stone-200/90 bg-white shadow-card print:border-0 print:shadow-none print:p-0 print:bg-transparent print:overflow-visible">
+              <div className="no-print border-b border-stone-100 p-4 sm:px-6">
                 <PanelHeader
                   icon={<AlignLeft className="h-4 w-4" />}
                   title="Transcript"
@@ -600,7 +624,7 @@ export default function ReaderPage({ doc, originFolder, onBack, onDocUpdated }: 
               </div>
               <div
                 ref={contentRef}
-                className="print-area print-body max-h-none overflow-visible p-4 sm:p-6 lg:max-h-[74vh] lg:overflow-y-auto"
+                className="print-area print-body max-h-none overflow-visible p-4 sm:p-6 lg:max-h-[74vh] lg:overflow-y-auto print:p-0 print:max-h-none print:overflow-visible"
               >
                 {editing ? (
                   <div className="no-print">
@@ -623,7 +647,7 @@ export default function ReaderPage({ doc, originFolder, onBack, onDocUpdated }: 
                     </div>
                   </div>
                 ) : (
-                  <p className="mx-auto max-w-[68ch] font-serif text-[1.05rem] leading-8 text-stone-800">{renderParaMatches()}</p>
+                  <p className="mx-auto max-w-[68ch] font-serif text-[1.05rem] leading-8 text-stone-800 whitespace-pre-wrap print:max-w-none print:text-[11pt] print:leading-[1.8] print:text-stone-900 print:font-serif">{renderParaMatches()}</p>
                 )}
                 {cueCount === 0 && !displayText.trim() && (
                   <p className="text-sm text-stone-500">No transcript text stored for this document.</p>
@@ -633,8 +657,8 @@ export default function ReaderPage({ doc, originFolder, onBack, onDocUpdated }: 
           )}
 
           {mode === 'timestamps' && (
-            <section aria-label="Timestamps" className="overflow-hidden rounded-lg border border-stone-200/90 bg-white shadow-card">
-              <div className="border-b border-stone-100 p-4 sm:px-6">
+            <section aria-label="Timestamps" className="overflow-hidden rounded-lg border border-stone-200/90 bg-white shadow-card print:border-0 print:shadow-none print:p-0 print:bg-transparent print:overflow-visible">
+              <div className="no-print border-b border-stone-100 p-4 sm:px-6">
                 <PanelHeader
                   icon={<ListOrdered className="h-4 w-4" />}
                   title="Timestamps"
@@ -681,28 +705,33 @@ export default function ReaderPage({ doc, originFolder, onBack, onDocUpdated }: 
               </div>
               <div
                 ref={contentRef}
-                className="print-area print-body max-h-none overflow-visible p-4 sm:p-6 lg:max-h-[74vh] lg:overflow-y-auto"
+                className="print-area print-body max-h-none overflow-visible p-4 sm:p-6 lg:max-h-[74vh] lg:overflow-y-auto print:p-0 print:max-h-none print:overflow-visible"
               >
                 {cueCount === 0 ? (
                   <p className="text-sm text-stone-500">No timestamped cues stored for this document.</p>
                 ) : (
-                  <ol className="mx-auto flex max-w-4xl flex-col gap-1.5">
+                  <ol className="mx-auto flex max-w-4xl flex-col gap-1.5 print:max-w-none print:gap-0">
                     {current.captions.map((c, i) => {
                       const highlighted = current.highlights.includes(c.start);
                       return (
                         <li
                           key={i}
                           ref={cueMatchIdx.includes(i) ? registerMark(cueMatchIdx.indexOf(i)) : undefined}
-                          className={cn('flex gap-3 rounded-lg px-2 py-1.5 text-[0.95rem] leading-7', highlighted && 'bg-yellow-50 ring-1 ring-yellow-200')}
+                          className={cn(
+                            'flex gap-3 rounded-lg px-2 py-1.5 text-[0.95rem] leading-7',
+                            highlighted && 'bg-yellow-50 ring-1 ring-yellow-200',
+                            'print:rounded-none print:border-b print:border-stone-100 print:px-0 print:py-2 print:text-[10pt] print:leading-relaxed print:gap-4 print:break-inside-avoid',
+                            highlighted && 'print:bg-amber-50/40 print:ring-0 print:border-l-2 print:border-amber-500 print:pl-3',
+                          )}
                         >
                           <button
                             onClick={() => void openExternal(timestampUrl(current.url, c.start))}
                             title={`Open video at ${formatMMSS(c.start)}`}
-                            className="w-12 shrink-0 select-none self-start font-mono text-[0.8rem] font-medium text-sky-700 hover:underline"
+                            className="w-12 shrink-0 select-none self-start font-mono text-[0.8rem] font-medium text-sky-700 hover:underline print:text-stone-500 print:text-[9pt] print:font-semibold print:w-12 print:tabular-nums"
                           >
                             {formatMMSS(c.start)}
                           </button>
-                          <span className="flex-1 text-stone-800">{renderCueText(c.text, i)}</span>
+                          <span className="flex-1 text-stone-800 print:text-stone-900">{renderCueText(c.text, i)}</span>
                           <span className="no-print flex shrink-0 items-start gap-0.5">
                             <button
                               onClick={() => toggleHighlight(c.start)}
@@ -828,6 +857,12 @@ export default function ReaderPage({ doc, originFolder, onBack, onDocUpdated }: 
             </section>
           )}
         </div>
+      </div>
+
+      {/* Print-only publication footer */}
+      <div className="hidden print:flex items-center justify-between mt-12 pt-4 border-t border-stone-200 text-[10px] text-stone-400 print:break-inside-avoid">
+        <span>Exported from Nukuzaa</span>
+        <span>{new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}</span>
       </div>
       </div>
     </div>

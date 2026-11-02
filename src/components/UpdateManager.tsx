@@ -131,7 +131,7 @@ export default function UpdateManager() {
 
   if (phase === 'checking') {
     return (
-      <div className="fixed left-5 top-5 z-[90] inline-flex items-center gap-2 rounded-xl border border-stone-200/80 bg-white/95 px-3.5 py-2 text-xs font-semibold text-stone-700 shadow-floating backdrop-blur-md">
+      <div className="no-print fixed left-5 top-5 z-[90] inline-flex items-center gap-2 rounded-xl border border-stone-200/80 bg-white/95 px-3.5 py-2 text-xs font-semibold text-stone-700 shadow-floating backdrop-blur-md">
         <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-500" /> Checking for updates…
       </div>
     );
@@ -140,7 +140,7 @@ export default function UpdateManager() {
   const pct = total ? Math.min(100, Math.round((downloaded / total) * 100)) : null;
 
   return (
-    <div className="fixed inset-0 z-[90] flex items-center justify-center p-4">
+    <div className="no-print fixed inset-0 z-[90] flex items-center justify-center p-4">
       <div
         className="absolute inset-0 bg-stone-950/40 backdrop-blur-xs transition-opacity"
         onClick={phase === 'available' || phase === 'error' ? () => setPhase('idle') : undefined}

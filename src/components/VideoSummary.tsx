@@ -596,38 +596,44 @@ export default function VideoSummary({ doc }: Props) {
 
       {summary && !(loading && streamed) && (
         sheets && sheets.length > 0 ? (
-          <div className="mx-auto mt-4 flex w-full max-w-[68ch] flex-col gap-5">
-            {sheets.map((slices, pi) => (
-              <div
-                key={pi}
-                ref={(el) => {
-                  pageRefs.current[pi] = el;
-                }}
-                className="page-sheet flex h-[720px] scroll-mt-4 flex-col rounded-lg border border-stone-200 bg-stone-50/60 p-6"
-              >
-                <div className="min-h-0 flex-1 overflow-hidden font-serif text-[1.02rem]">
-                  {slices.map((s, si) =>
-                    s.items === null ? (
-                      <div key={`s${si}`}>{blocks[s.bi]}</div>
-                    ) : (
-                      cloneElement(
-                        blocks[s.bi] as React.ReactElement,
-                        { key: `s${si}` },
-                        Children.toArray(
-                          (blocks[s.bi] as React.ReactElement).props.children,
-                        ).slice(s.items[0], s.items[1]),
-                      )
-                    ),
-                  )}
+          <>
+            <div className="no-print mx-auto mt-4 flex w-full max-w-[68ch] flex-col gap-5">
+              {sheets.map((slices, pi) => (
+                <div
+                  key={pi}
+                  ref={(el) => {
+                    pageRefs.current[pi] = el;
+                  }}
+                  className="page-sheet flex h-[720px] scroll-mt-4 flex-col rounded-lg border border-stone-200 bg-stone-50/60 p-6"
+                >
+                  <div className="min-h-0 flex-1 overflow-hidden font-serif text-[1.02rem]">
+                    {slices.map((s, si) =>
+                      s.items === null ? (
+                        <div key={`s${si}`}>{blocks[s.bi]}</div>
+                      ) : (
+                        cloneElement(
+                          blocks[s.bi] as React.ReactElement,
+                          { key: `s${si}` },
+                          Children.toArray(
+                            (blocks[s.bi] as React.ReactElement).props.children,
+                          ).slice(s.items[0], s.items[1]),
+                        )
+                      ),
+                    )}
+                  </div>
+                  <p className="page-foot mt-3 border-t border-stone-200 pt-2 text-center font-sans text-[11px] font-medium tracking-wide text-stone-400">
+                    Page {pi + 1} of {sheets.length}
+                  </p>
                 </div>
-                <p className="page-foot mt-3 border-t border-stone-200 pt-2 text-center font-sans text-[11px] font-medium tracking-wide text-stone-400">
-                  Page {pi + 1} of {sheets.length}
-                </p>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+            {/* Clean flowing document for print / PDF export */}
+            <article className="hidden print:block w-full font-serif text-[10.5pt] leading-relaxed text-stone-900 print-summary-article">
+              {blocks}
+            </article>
+          </>
         ) : (
-          <article className="w-full max-w-[68ch] font-serif text-[1.02rem]">
+          <article className="w-full max-w-[68ch] font-serif text-[1.02rem] print:max-w-none print:text-[10.5pt] print:leading-relaxed print-summary-article">
             {blocks}
             {model && (
               <p className="no-print mt-6 border-t border-stone-100 pt-2 font-sans text-[11px] text-stone-400">

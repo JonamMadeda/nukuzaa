@@ -103,112 +103,119 @@ textarea {
   animation: toast-in 0.18s ease-out;
 }
 
-/* Export PDF: isolate the reader content on a clean printed page.
+/* Export PDF: clean, minimal, publication-quality formatting for reader exports.
  *
- * - `@page { margin: 0 }` suppresses the browser's own header/footer
- *   (page URL like localhost:1420, date, page numbers) in Chromium,
- *   WebView2 and Firefox. Our own padding on .print-area acts as the
- *   page margin instead — so the PDF has no footer at all.
- * - Screen-only chrome is .no-print; each reader panel marks its content
- *   .print-area (only the active panel is mounted, so only it prints). */
+ * - `@page { margin: 18mm 20mm; }` provides balanced, elegant margins on every page.
+ * - Screen chrome is marked .no-print and suppressed with display: none.
+ * - .print-area containers are kept in normal flow (position: static) to prevent overlaps
+ *   and allow natural page breaks across multi-page documents. */
 @media print {
   @page {
     size: auto;
-    margin: 0;
+    margin: 18mm 20mm;
   }
+
+  *,
+  *::before,
+  *::after {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
   html,
-  body {
-    background: #fff !important;
+  body,
+  #root {
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+    color: #1c1917 !important;
   }
-  body * {
-    visibility: hidden;
+
+  .no-print,
+  [aria-hidden="true"].no-print {
+    display: none !important;
   }
-  .print-root {
+
+  .print-area,
+  .print-body {
     position: static !important;
     display: block !important;
-    padding: 0 !important;
-  }
-  .print-area,
-  .print-area * {
-    visibility: visible;
-  }
-  .print-area {
-    position: absolute !important;
-    inset: 0 auto auto 0 !important;
     width: 100% !important;
     max-width: none !important;
     max-height: none !important;
+    min-height: 0 !important;
     overflow: visible !important;
     border: 0 !important;
     border-radius: 0 !important;
     box-shadow: none !important;
-    background: #fff !important;
-    color: #000 !important;
-    padding: 14mm 14mm 18mm !important;
+    background: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
   }
-  .print-area .print-body {
-    overflow: visible !important;
-    max-height: none !important;
-  }
-  /* Calm screen colors down to print-friendly black-on-white. */
-  .print-area a,
-  .print-area button,
+
+  /* Readable long-form type. */
   .print-area p,
-  .print-area li,
-  .print-area span,
+  .print-summary-article p {
+    orphans: 3;
+    widows: 3;
+    color: #1c1917 !important;
+  }
+
   .print-area h1,
   .print-area h2,
-  .print-area h3 {
-    color: #000 !important;
-    text-shadow: none !important;
+  .print-area h3,
+  .print-summary-article h1,
+  .print-summary-article h2,
+  .print-summary-article h3 {
+    break-after: avoid;
+    page-break-after: avoid;
+    color: #0c0a09 !important;
   }
-  .print-area a,
-  .print-area button {
-    text-decoration: none !important;
+
+  /* Summary Markdown Headings & Lists */
+  .print-summary-article h3 {
+    margin-top: 1.5rem !important;
+    margin-bottom: 0.5rem !important;
+    font-size: 1.15rem !important;
+    font-weight: 700 !important;
+    border-bottom: 1px solid #e7e5e4 !important;
+    padding-bottom: 0.35rem !important;
   }
+
+  .print-summary-article ul,
+  .print-summary-article ol {
+    margin: 0.75rem 0 !important;
+    padding-left: 1.5rem !important;
+  }
+
+  .print-summary-article li {
+    margin-bottom: 0.35rem !important;
+    line-height: 1.65 !important;
+    break-inside: avoid;
+    page-break-inside: avoid;
+    color: #1c1917 !important;
+  }
+
+  /* Timestamps: no splitting cues across page boundaries */
+  .print-area li {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
   .print-area mark {
     background: none !important;
     color: inherit !important;
+    font-weight: 600;
   }
-  /* Readable long-form type. */
-  .print-area p {
-    orphans: 3;
-    widows: 3;
+
+  .print-area a,
+  .print-area button {
+    text-decoration: none !important;
+    color: inherit !important;
   }
-  .print-area h1,
-  .print-area h2,
-  .print-area h3 {
-    break-after: avoid;
-  }
-  /* Timestamps: hairline separators + no split cues. */
-  .print-area li {
-    break-inside: avoid;
-    border-bottom: 1px solid #e5e5e5;
-  }
-  .print-area li:last-child {
-    border-bottom: 0;
-  }
+
   .print-area img {
     max-width: 100% !important;
-  }
-  /* Summary sheets print as one flowing document, not fixed boxes. */
-  .print-area .page-sheet {
-    height: auto !important;
-    min-height: 0 !important;
-    overflow: visible !important;
-    background: #fff !important;
-    border: 0 !important;
-    box-shadow: none !important;
-    padding: 0 !important;
-    margin: 0 0 8mm !important;
-  }
-  .print-area .page-sheet:last-child {
-    margin-bottom: 0 !important;
-  }
-  .print-area .page-foot {
-    display: none !important;
-  }
-  .no-print {
-    display: none !important;
   }
 }

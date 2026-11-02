@@ -346,7 +346,9 @@ async function callOpenRouter(apiKey: string, model: string, messages: ChatMessa
 /**
  * Generate (and cache) a comprehensive Markdown summary for a transcript.
  *
- * Proxy configured → authenticated request to the proxy (no client key).
+ * Proxy configured → authenticated request to the proxy (no client key);
+ * if the proxy is unreachable or all its models fail, falls back to direct
+ * OpenRouter with the user's own key when one is configured.
  * Otherwise → direct OpenRouter with the user's own key + model fallbacks.
  *
  * Pass `onToken` to stream: tokens render live and the promise still
@@ -364,7 +366,12 @@ export async function generateVideoSummary(
   if (cached) return { summary: cached, model: 'cache', truncated: false, fromCache: true };
 
   const proxy = getProxyUrl();
-  if (proxy) return requestViaProxy(proxy, doc, text, opts);
+  if (proxy) {
+    return withProxyFallback(
+      () => requestViaProxy(proxy, doc, text, opts),
+      () => requestDirect(doc, text, opts),
+    );
+  }
 
   return requestDirect(doc, text, opts);
 }
@@ -474,6 +481,27 @@ async function callOpenRouterStream(
   }
   const out = await readOpenRouterStream(res, onToken, signal);
   return { text: out.text, model: out.model ?? model };
+}
+
+/**
+ * Route through the proxy, but fall back to the user's own key (direct
+ * OpenRouter) when the proxy is unreachable or every model on it failed.
+ * Auth and quota errors surface instead — they won't heal by switching paths.
+ */
+export async function withProxyFallback<T>(
+  runProxy: () => Promise<T>,
+  runDirect: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await runProxy();
+  } catch (e) {
+    if (e instanceof DOMException && e.name === 'AbortError') throw e;
+    const err = e instanceof SummaryError ? e : new SummaryError('API', String(e));
+    if ((err.code === 'NETWORK' || err.code === 'API') && getConfiguredApiKey()) {
+      return runDirect();
+    }
+    throw err;
+  }
 }
 
 /** Direct path: user's own OpenRouter key, primary model + fallbacks. */

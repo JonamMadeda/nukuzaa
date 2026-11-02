@@ -6,9 +6,21 @@
 
 use tauri_plugin_opener::OpenerExt;
 use tauri::Manager;
+use std::sync::OnceLock;
 
-fn http_client() -> Result<reqwest::Client, String> {
-    reqwest::Client::builder()
+/// One shared client for the app's lifetime: a stable connection pool and
+/// cookie jar (a fresh client per request had neither, which looks bot-like
+/// to YouTube and drops cookies it sets between requests).
+///
+/// `SOCS=CAI` is Google's consent-preference cookie — it suppresses the EU
+/// consent interstitial that otherwise replaces the watch page (and hides
+/// its captionTracks) for cookie-less visitors.
+fn http_client() -> Result<&'static reqwest::Client, String> {
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    if let Some(client) = CLIENT.get() {
+        return Ok(client);
+    }
+    let built = reqwest::Client::builder()
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36")
         .default_headers({
             let mut h = reqwest::header::HeaderMap::new();
@@ -16,10 +28,16 @@ fn http_client() -> Result<reqwest::Client, String> {
                 reqwest::header::ACCEPT_LANGUAGE,
                 reqwest::header::HeaderValue::from_static("en-US,en;q=0.9"),
             );
+            h.insert(
+                reqwest::header::COOKIE,
+                reqwest::header::HeaderValue::from_static("SOCS=CAI"),
+            );
             h
         })
+        .cookie_store(true)
         .build()
-        .map_err(|e| format!("http client error: {e}"))
+        .map_err(|e| format!("http client error: {e}"))?;
+    Ok(CLIENT.get_or_init(|| built))
 }
 
 /// YouTube origins this backend is allowed to contact. Everything transcript

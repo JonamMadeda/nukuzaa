@@ -203,23 +203,28 @@ async function callOpenRouter(
   messages: ChatMsg[],
   maxTokens = 4000,
 ): Promise<{ content: string } | { rateLimited: true } | { failed: string }> {
-  const res = await fetch(OPENROUTER_URL, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': 'https://nukuzaa.app',
-      'X-Title': 'Nukuzaa summary proxy',
-    },
-    body: JSON.stringify({
-      model,
-      temperature: 0.3,
-      max_tokens: maxTokens,
-      messages,
-      // Fastest provider serving this model — cuts time-to-first-token.
-      provider: { sort: 'throughput' },
-    }),
-  });
+  let res: Response;
+  try {
+    res = await fetch(OPENROUTER_URL, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://nukuzaa.app',
+        'X-Title': 'Nukuzaa summary proxy',
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0.3,
+        max_tokens: maxTokens,
+        messages,
+        // Fastest provider serving this model — cuts time-to-first-token.
+        provider: { sort: 'throughput' },
+      }),
+    });
+  } catch {
+    return { failed: `Network error contacting OpenRouter (${model}).` };
+  }
   if (res.status === 401 || res.status === 403) {
     throw { status: 502, message: 'Proxy key rejected by OpenRouter — owner must rotate OPENROUTER_API_KEY.' };
   }
@@ -299,11 +304,80 @@ async function handleChat(req: Request, env: Env, cors: Headers, userId: string)
   });
 }
 
+/** Read the upstream SSE far enough to know the model is actually working:
+ *  resolve as soon as the first complete `data:` line arrives. An in-stream
+ *  error event (model overloaded/removed right after accepting the request)
+ *  counts as a failure so the caller can try the next model; anything else
+ *  (metadata, first token) means the model committed. Returns every chunk
+ *  consumed so the caller can replay them into the client-facing stream. */
+async function peekSseCommit(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+): Promise<{ ok: true; buffered: Uint8Array[] } | { ok: false; error: string }> {
+  const decoder = new TextDecoder();
+  const buffered: Uint8Array[] = [];
+  let buf = '';
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (!done) {
+        buffered.push(value);
+        buf += decoder.decode(value, { stream: true });
+      }
+      // Consume every complete line; non-data lines (SSE comments, blank
+      // keep-alives) are skipped without blocking the scan of later lines.
+      let nl: number;
+      while ((nl = buf.indexOf('\n')) !== -1) {
+        const line = buf.slice(0, nl).trim();
+        buf = buf.slice(nl + 1);
+        if (!line.startsWith('data:')) continue;
+        const data = line.slice(5).trim();
+        if (!data) continue;
+        if (data === '[DONE]') return { ok: false, error: 'Empty stream from model' };
+        try {
+          const j = JSON.parse(data) as { error?: { message?: string } };
+          if (j.error?.message) return { ok: false, error: `In-stream error: ${j.error.message}` };
+        } catch {
+          /* unparseable event — pipe through and let the client decide */
+        }
+        return { ok: true, buffered };
+      }
+      if (done) return { ok: false, error: 'Stream ended before any output' };
+    }
+  } catch {
+    return { ok: false, error: 'Upstream stream error' };
+  }
+}
+
+/** Re-emits the chunks consumed by the peek, then pipes the rest of the
+ *  upstream body through unchanged. */
+function pipeWithReplay(
+  buffered: Uint8Array[],
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+): ReadableStream<Uint8Array> {
+  let i = 0;
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      if (i < buffered.length) {
+        controller.enqueue(buffered[i++]);
+        return;
+      }
+      const { done, value } = await reader.read();
+      if (done) controller.close();
+      else controller.enqueue(value);
+    },
+    cancel(reason) {
+      void reader.cancel(reason);
+    },
+  });
+}
+
 /** Pipe OpenRouter SSE from the first working model; JSON error if none works.
- *  Quota is consumed only when a model commits (headers in) or returns
- *  content — invalid requests and upstream failures never burn quota. Any
- *  non-401/403 upstream status (429, 404, 400, 5xx) falls through to the next
- *  model so a removed/renamed model id can't take the endpoint down. */
+ *  Quota is consumed only when a model commits (first SSE event is not an
+ *  error) or returns content — invalid requests and upstream failures never
+ *  burn quota. Any non-401/403 upstream failure (network error, 429, 404,
+ *  400, 5xx, or an immediate in-stream error) falls through to the next model
+ *  so a removed/renamed or temporarily dead model id can't take the endpoint
+ *  down. */
 async function streamViaFirstWorkingModel(
   env: Env,
   models: string[],
@@ -317,26 +391,40 @@ async function streamViaFirstWorkingModel(
 ): Promise<Response> {
   let lastFailure = '';
   for (const model of models) {
-    const upstream = await fetch(OPENROUTER_URL, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://nukuzaa.app',
-        'X-Title': `Nukuzaa ${workerName} proxy`,
-      },
-      body: JSON.stringify({
-        model,
-        messages,
-        temperature,
-        max_tokens: maxTokens,
-        stream: true,
-        provider: { sort: 'throughput' },
-      }),
-    });
+    let upstream: Response;
+    try {
+      upstream = await fetch(OPENROUTER_URL, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://nukuzaa.app',
+          'X-Title': `Nukuzaa ${workerName} proxy`,
+        },
+        body: JSON.stringify({
+          model,
+          messages,
+          temperature,
+          max_tokens: maxTokens,
+          stream: true,
+          provider: { sort: 'throughput' },
+        }),
+      });
+    } catch {
+      lastFailure = `Network error contacting OpenRouter (${model}).`;
+      continue;
+    }
     if (upstream.ok && upstream.body) {
-      // Headers are in, so this model is committed — count quota once, then
-      // pipe SSE straight through.
+      const reader = upstream.body.getReader();
+      // Peek before committing: a model that accepts the request but errors
+      // in the first SSE event must not burn quota or block the fallbacks.
+      const decision = await peekSseCommit(reader);
+      if (!decision.ok) {
+        lastFailure = `${decision.error} (${model}).`;
+        await reader.cancel().catch(() => {});
+        continue;
+      }
+      // This model committed — count quota once, then pipe SSE through.
       if (quota) {
         try {
           await consumeQuota(env, quota.scope, quota.userId);
@@ -348,7 +436,7 @@ async function streamViaFirstWorkingModel(
       h.set('Content-Type', 'text/event-stream');
       h.set('Cache-Control', 'no-cache');
       h.set('X-Chat-Model', model);
-      return new Response(upstream.body, { status: 200, headers: h });
+      return new Response(pipeWithReplay(decision.buffered, reader), { status: 200, headers: h });
     }
     if (upstream.status === 401 || upstream.status === 403) {
       return json({ error: 'Proxy key rejected by OpenRouter — owner must rotate OPENROUTER_API_KEY.' }, 502, cors);
@@ -415,7 +503,7 @@ export default {
         { role: 'system', content: 'You write thorough, faithful, well-structured video summaries in Markdown.' },
         { role: 'user', content: prompt },
       ];
-      const models = [env.MODEL_OVERRIDE || env.PRIMARY_MODEL || FALLBACK_MODELS[0], ...FALLBACK_MODELS];
+      const models = [...new Set([env.MODEL_OVERRIDE || env.PRIMARY_MODEL || FALLBACK_MODELS[0], ...FALLBACK_MODELS])];
       if (body.stream === true) {
         // Live-token path: same models/prompt, SSE piped straight through.
         // Quota is consumed when a model commits (inside the helper).

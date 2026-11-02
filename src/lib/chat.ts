@@ -7,6 +7,7 @@ import {
   getConfiguredApiKey,
   getProxyUrl,
   readOpenRouterStream,
+  withProxyFallback,
 } from './summarize';
 
 // ---------------------------------------------------------------------------
@@ -25,8 +26,9 @@ import {
 //    while the rest generate.
 //
 // Same key story as summaries: proxy configured → POST /chat with the auth
-// JWT (key stays server-side); otherwise direct OpenRouter with the user's
-// own key.
+// JWT (key stays server-side); if the proxy is unreachable or all its models
+// fail, falls back to direct OpenRouter with the user's own key when one is
+// configured; otherwise direct with the user's own key.
 // ---------------------------------------------------------------------------
 
 export interface ChatTurn {
@@ -292,7 +294,12 @@ export async function askTranscriptQuestion(
   const clippedHistory = clipHistory(history);
 
   const proxy = getProxyUrl();
-  if (proxy) return requestViaProxy(proxy, doc, context, excerpted, clippedHistory, q, opts);
+  if (proxy) {
+    return withProxyFallback(
+      () => requestViaProxy(proxy, doc, context, excerpted, clippedHistory, q, opts),
+      () => requestDirect(doc, context, excerpted, clippedHistory, q, opts),
+    );
+  }
 
   return requestDirect(doc, context, excerpted, clippedHistory, q, opts);
 }
