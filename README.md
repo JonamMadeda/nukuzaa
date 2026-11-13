@@ -10,7 +10,7 @@ or export as PDF.
 ## Install (recommended)
 
 1. Go to **[Releases](https://github.com/JonamMadeda/nukuzaa/releases/latest)**
-   and download **`Nukuzaa_0.5.0_x64-setup.exe`**.
+   and download **`Nukuzaa_0.6.0_x64-setup.exe`**.
 2. Double-click the setup file and follow the installer. This adds Nukuzaa to
    your Start Menu and Apps list.
 3. Open **Nukuzaa** and start saving transcripts. No accounts, no settings,
@@ -21,7 +21,7 @@ or export as PDF.
 > Click **More info → Run anyway**. The app updates itself from this GitHub
 > repo (see below), so you only need to trust this one prompt.
 
-**No-install option:** download **`Nukuzaa-0.5.0-portable.exe`** from the same
+**No-install option:** download **`Nukuzaa-0.6.0-portable.exe`** from the same
 release page and double-click it — nothing is installed.
 
 **Requirements:** Windows 10/11 64-bit and an internet connection. (WebView2
@@ -49,6 +49,8 @@ need to revisit the releases page unless you want to.
   and quotes for every transcript, served securely per user
 - **Ask this video (AI chat)** — ask questions grounded in one transcript and
   get streamed answers with clickable timestamps that jump to the moment
+- **Concurrent downloads** — parallel worker pool for multi-URL and playlist downloads (1–5 simultaneous workers), plus non-blocking concurrent single-video additions
+- **Refreshed dashboard** — modular library header with metrics, responsive search and toolbar controls, and clean document shelves
 - Folder collections with document counts, search, and grid/list views
 - Local caption extraction (runs on your machine, no datacenter blocks)
 - Dedicated reader page with summary/paragraphs/timestamps views, copy-all, and PDF export
@@ -81,4 +83,4 @@ and release process: **[docs/nukuzaa-guide.md](docs/nukuzaa-guide.md)**.
 | "No captions found" | Video has captions disabled, or auto-captions still processing |
 | Import fails | Transcripts import only in the desktop app, not a browser |
 
-Current version: **0.5.0**
+Current version: **0.6.0**

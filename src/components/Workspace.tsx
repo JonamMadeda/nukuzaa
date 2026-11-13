@@ -50,11 +50,12 @@ export default function Workspace({ folder, allFolders, onBack, onDocsChanged, o
   const [docs, setDocs] = useState<TranscriptDoc[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [extracting, setExtracting] = useState(false);
+  const [activeDownloads, setActiveDownloads] = useState<{ id: string; url: string; videoId?: string }[]>([]);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [sort, setSort] = useState<DocSort>('newest');
   const [favOnly, setFavOnly] = useState(false);
   const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkInitialText, setBulkInitialText] = useState('');
   const [movingDoc, setMovingDoc] = useState<TranscriptDoc | null>(null);
 
   const refresh = async () => {
@@ -89,12 +90,17 @@ export default function Workspace({ folder, allFolders, onBack, onDocsChanged, o
 
   const addDocument = async () => {
     const input = url.trim();
-    if (!input || extracting) return;
-    // Playlist shortcut: a ?list= URL opens the bulk importer prefilled.
-    if (/[?&]list=/.test(input)) {
+    if (!input) return;
+
+    // Multi-line or playlist input automatically opens the bulk importer prefilled
+    const lines = input.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    if (lines.length > 1 || /[?&]list=/.test(input)) {
+      setBulkInitialText(input);
       setBulkOpen(true);
+      setUrl('');
       return;
     }
+
     // Duplicate prompt for interactive adds (elsewhere only — same-folder is an update).
     const videoId = extractVideoId(input);
     if (videoId) {
@@ -111,24 +117,32 @@ export default function Workspace({ folder, allFolders, onBack, onDocsChanged, o
         /* duplicate check is best-effort */
       }
     }
-    setExtracting(true);
-    try {
-      notify('info', 'Fetching captions from YouTube…');
-      const outcome = await importOne(input);
-      if (outcome.status === 'failed') throw new Error(outcome.detail ?? 'Import failed.');
-      if (outcome.status === 'skipped') {
-        notify('info', `${outcome.title} — ${outcome.detail ?? 'skipped.'}`);
-      } else {
-        setUrl('');
-        onDocsChanged();
-        notify('success', `Saved “${outcome.title}”.${outcome.detail ? ` ${outcome.detail}` : ''}`);
+
+    const downloadId = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    setUrl('');
+    setActiveDownloads((prev) => [
+      ...prev,
+      { id: downloadId, url: input, videoId: videoId ?? undefined },
+    ]);
+
+    void (async () => {
+      try {
+        notify('info', 'Fetching captions from YouTube…');
+        const outcome = await importOne(input);
+        if (outcome.status === 'failed') throw new Error(outcome.detail ?? 'Import failed.');
+        if (outcome.status === 'skipped') {
+          notify('info', `${outcome.title} — ${outcome.detail ?? 'skipped.'}`);
+        } else {
+          onDocsChanged();
+          notify('success', `Saved “${outcome.title}”.${outcome.detail ? ` ${outcome.detail}` : ''}`);
+        }
+      } catch (e) {
+        if (e instanceof TranscriptError) notify('error', e.message);
+        else notify('error', e instanceof Error ? e.message : friendlyDbError(e));
+      } finally {
+        setActiveDownloads((prev) => prev.filter((d) => d.id !== downloadId));
       }
-    } catch (e) {
-      if (e instanceof TranscriptError) notify('error', e.message);
-      else notify('error', e instanceof Error ? e.message : friendlyDbError(e));
-    } finally {
-      setExtracting(false);
-    }
+    })();
   };
 
   const toggleFavorite = async (d: TranscriptDoc) => {
@@ -234,7 +248,7 @@ export default function Workspace({ folder, allFolders, onBack, onDocsChanged, o
       </div>
 
       {/* Add-document bar */}
-      <div className="sticky top-2 z-10 mt-4 flex flex-col gap-2 rounded-lg border border-stone-200/90 bg-white p-2 shadow-card sm:flex-row">
+      <div className="sticky top-2 z-10 mt-4 flex flex-col gap-2 rounded-lg border border-stone-200/90 bg-white p-2 shadow-card sm:flex-row sm:items-center">
         <div className="relative flex-1">
           <Link2 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" />
           <input
@@ -242,33 +256,43 @@ export default function Workspace({ folder, allFolders, onBack, onDocsChanged, o
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') addDocument();
+              if (e.key === 'Enter') void addDocument();
             }}
             placeholder="Paste any YouTube URL (watch, youtu.be, Shorts, or playlist)…"
-            disabled={extracting}
-            className="w-full rounded-md border border-stone-200 py-2 pl-9 pr-3 text-sm outline-none transition placeholder:text-stone-400 focus:border-stone-400 focus:ring-2 focus:ring-stone-200/60 disabled:bg-stone-50"
+            className="w-full rounded-md border border-stone-200 py-2 pl-9 pr-3 text-sm outline-none transition placeholder:text-stone-400 focus:border-stone-400 focus:ring-2 focus:ring-stone-200/60"
           />
         </div>
-        <button
-          onClick={addDocument}
-          disabled={!url.trim() || extracting}
-          className="ui-primary h-9 px-4 text-xs font-semibold"
-        >
-          {extracting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-          {extracting ? 'Extracting…' : 'Add document'}
-        </button>
-        <button
-          onClick={() => setBulkOpen(true)}
-          title="Import many URLs or a playlist at once"
-          aria-label="Bulk import videos"
-          className="ui-secondary h-9 px-3.5 text-xs font-semibold"
-        >
-          <ListPlus className="h-4 w-4" /> Bulk import
-        </button>
+        <div className="flex items-center gap-2">
+          {activeDownloads.length > 0 && (
+            <span className="inline-flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800">
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-600" />
+              <span>{activeDownloads.length} downloading</span>
+            </span>
+          )}
+          <button
+            onClick={() => void addDocument()}
+            disabled={!url.trim()}
+            className="ui-primary h-9 px-4 text-xs font-semibold"
+          >
+            <Plus className="h-4 w-4" />
+            Add document
+          </button>
+          <button
+            onClick={() => {
+              setBulkInitialText(url);
+              setBulkOpen(true);
+            }}
+            title="Import many URLs or a playlist at once"
+            aria-label="Bulk import videos"
+            className="ui-secondary h-9 px-3.5 text-xs font-semibold"
+          >
+            <ListPlus className="h-4 w-4" /> Bulk import
+          </button>
+        </div>
       </div>
-      {extracting && (
+      {activeDownloads.length > 0 && (
         <p className="mt-2 text-xs text-stone-500">
-          Reading the watch page + caption XML on this device — usually a few seconds.
+          Fetching caption data from YouTube in the background ({activeDownloads.length} running concurrently).
         </p>
       )}
 
@@ -311,13 +335,7 @@ export default function Workspace({ folder, allFolders, onBack, onDocsChanged, o
             </div>
           )}
         </div>
-      ) : docs.length === 0 ? (
-        extracting ? (
-          <div className="mt-3 grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            <ImportSkeletonCard />
-            <ImportSkeletonCard />
-          </div>
-        ) : (
+      ) : docs.length === 0 && activeDownloads.length === 0 ? (
         <div className="mt-4 rounded-lg border border-dashed border-stone-300 bg-white p-8 text-center shadow-xs">
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-md bg-stone-100 text-stone-400">
             <FileText className="h-6 w-6" />
@@ -327,10 +345,11 @@ export default function Workspace({ folder, allFolders, onBack, onDocsChanged, o
             Paste any YouTube URL in the bar above. Transcripts and notes are saved locally and stay private to your account.
           </p>
         </div>
-        )
       ) : (
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {extracting && <ImportSkeletonCard />}
+          {activeDownloads.map((job) => (
+            <ImportSkeletonCard key={job.id} url={job.url} videoId={job.videoId} />
+          ))}
           {docs.map((d) => (
             <article
               key={d.id}
@@ -417,8 +436,11 @@ export default function Workspace({ folder, allFolders, onBack, onDocsChanged, o
       />
       <BulkImportModal
         open={bulkOpen}
-        initialText={/[?&]list=/.test(url) ? url : ''}
-        onClose={() => setBulkOpen(false)}
+        initialText={bulkInitialText || (/[?&]list=/.test(url) ? url : '')}
+        onClose={() => {
+          setBulkOpen(false);
+          setBulkInitialText('');
+        }}
         onExpandPlaylist={extractPlaylistIds}
         onImport={importOne}
         onDone={() => {
@@ -430,15 +452,21 @@ export default function Workspace({ folder, allFolders, onBack, onDocsChanged, o
   );
 }
 
-function ImportSkeletonCard() {
+function ImportSkeletonCard({ url, videoId }: { url?: string; videoId?: string }) {
   return (
-    <div aria-hidden className="overflow-hidden rounded-lg border border-stone-200 bg-white">
-      <div className="flex aspect-video items-center justify-center gap-2 bg-stone-100 text-xs font-medium text-stone-500">
-        <Loader2 className="h-4 w-4 animate-spin" /> Extracting…
+    <div aria-hidden className="overflow-hidden rounded-lg border border-amber-200/90 bg-white shadow-card">
+      <div className="flex aspect-video items-center justify-center gap-2 bg-amber-50/60 text-xs font-medium text-amber-800">
+        <Loader2 className="h-4 w-4 animate-spin text-amber-600" />
+        <span>Extracting captions…</span>
       </div>
       <div className="p-2.5">
-        <div className="h-4 w-3/4 animate-pulse rounded bg-stone-200" />
-        <div className="mt-2 h-3 w-1/3 animate-pulse rounded bg-stone-100" />
+        <p className="truncate text-xs font-medium text-stone-800">
+          {videoId ? `Video ID: ${videoId}` : (url ? url.slice(0, 45) : 'Downloading…')}
+        </p>
+        <p className="mt-1 flex items-center gap-1.5 text-[11px] text-amber-700">
+          <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
+          <span>Downloading concurrently</span>
+        </p>
       </div>
     </div>
   );

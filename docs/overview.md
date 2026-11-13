@@ -7,7 +7,7 @@
 >
 > - Repository: https://github.com/JonamMadeda/nukuzaa
 > - Latest release: https://github.com/JonamMadeda/nukuzaa/releases/latest
-> - Current version: **0.5.0**
+> - Current version: **0.6.0**
 > - Landing page: https://github.com/JonamMadeda/nukuzaa_landing_page
 
 ---
@@ -35,6 +35,7 @@ or simply ask the video questions.
 - **Folder collections** — custom folders with accent colors, pinning,
   archiving, bulk import (including playlists), move-between-folders, and
   grid/list views with instant search.
+- **Concurrent downloads** — parallel worker pool for multi-URL and playlist downloads (1–5 simultaneous workers) with batch deduplication, plus non-blocking concurrent single-video additions.
 - **Dashboard shelves** — Recently opened (newest first, capped so the row
   never overflows), Favorites, and Saved highlights.
 - **Local vault** — every folder and transcript is auto-mirrored as plain
